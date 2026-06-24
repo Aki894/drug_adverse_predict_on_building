@@ -7,6 +7,7 @@
 | Fold-local base | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_084455_solo5_foldlocal_base/results.txt` | 5 | 0.91102 | 0.90658 | 0.82887 | 0.66108 | Baseline after fold-local negative sampling cleanup. |
 | D4 similarity negative weighting | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_090556_solo5_d4_neg_nopin/results.txt` | 5 | 0.91138 | 0.90698 | 0.82806 | 0.66116 | Tiny AUC/AUPR gain, no useful ACC/MCC gain. Not strong enough as the main method. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
+| PU-style negative BCE + threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/results.txt` | 5 | 0.91042 | 0.90573 | 0.83285 | 0.66598 | Negative ablation: below calibrated-threshold screen, so do not promote as the main direction. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.93023 | 0.92643 | 0.85587 | 0.71201 | Completed five-fold long-training confirmation; strongest current main direction. |
 
 ## Fold-Level Calibrated Thresholds
@@ -26,7 +27,7 @@
 
 ## Next Validation Gate
 
-Use the completed 30-epoch calibrated-threshold five-fold run as the current main evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings when time allows. The queued PU-weighted BCE screen is now the next validation gate for a possible training-objective improvement beyond threshold calibration.
+Use the completed 30-epoch calibrated-threshold five-fold run as the current main evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Remote run `e30_base_quiet_u` has been started for this stronger same-epoch comparison.
 
 ## 30-Epoch Calibrated Threshold Progress
 
@@ -50,4 +51,5 @@ PU-style negative BCE weighting has been implemented as a switchable follow-up e
 - Risk sources: drug similarity evidence plus optional ADR similarity evidence from MESH/GDA matrices.
 - First queued remote screen exposed a calibration-path batch shape bug and was replaced by `solo5_pu_weighted_fixed`.
 - Fixed remote screen: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/`.
-- Fold 1 after the fix: AUC 0.91128, AUPR 0.90472, ACC 0.83447, MCC 0.66896, threshold 0.790. The remaining folds are still running.
+- Final fixed screen: AUC 0.91042, AUPR 0.90573, ACC 0.83285, MCC 0.66598.
+- Interpretation: below the 5-epoch threshold-calibration screen (AUC 0.91262, AUPR 0.90820, ACC 0.83518, MCC 0.67062), so this is a negative ablation rather than a publishable main direction.

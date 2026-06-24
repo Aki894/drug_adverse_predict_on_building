@@ -165,11 +165,11 @@
       </div>
       <div class="callout">
         <strong>推荐下一轮主线</strong>
-        以“训练目标和采样更适配 positive-unlabeled ADR 标签”为主线，优先测试 <code>PU-weighted BCE / nnPU 风格损失</code>、<code>低支持感知采样</code>、<code>side-aware 伪负风险评分</code>，并保留已经有效的 <code>fold-local threshold calibration</code> 作为决策层组件。
+        以 <code>fold-local threshold calibration</code> 作为当前主线；<code>PU-weighted BCE</code> 已完成初筛但低于阈值校准，不建议继续作为主贡献。下一步优先补齐 30 epoch 未校准 base 对照，再考虑 <code>低支持感知采样</code> 或更保守的 side-aware 风险建模。
       </div>
       <div class="callout">
         <strong>实现状态更新</strong>
-        <code>PU-weighted BCE</code> 已作为默认关闭的实验开关实现并推送；远程 <code>solo5_pu_weighted</code> 已在 30 epoch 主实验结束后启动。30 epoch 阈值校准五折验证已完成，最终均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201。
+        <code>PU-weighted BCE</code> 五折初筛已完成，均值为 AUC 0.91042、AUPR 0.90573、ACC 0.83285、MCC 0.66598，低于 5 epoch 阈值校准结果；30 epoch 阈值校准五折验证已完成，最终均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201。远程已启动 <code>e30_base_quiet_u</code> 作为同配置未校准 base 对照。
       </div>
     </section>
 
@@ -218,6 +218,7 @@
           <tr><td>Fold-local base</td><td>5</td><td>0.91102</td><td>0.90658</td><td>0.82887</td><td>0.66108</td><td>当前对照。</td></tr>
           <tr><td>D4 similarity negative weighting</td><td>5</td><td>0.91138</td><td>0.90698</td><td>0.82806</td><td>0.66116</td><td>提升太小，不建议作为主线。</td></tr>
           <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td>短训筛选中全指标提升。</td></tr>
+          <tr><td>PU-weighted BCE + threshold calibration</td><td>5</td><td>0.91042</td><td>0.90573</td><td>0.83285</td><td>0.66598</td><td>低于阈值校准短训结果，作为负向消融保留。</td></tr>
           <tr><td>Fold-local threshold calibration</td><td>30</td><td>0.93023</td><td>0.92643</td><td>0.85587</td><td>0.71201</td><td><span class="good">当前最稳主线</span>，五折长训完成，ACC/MCC 提升最明确。</td></tr>
         </tbody>
       </table>

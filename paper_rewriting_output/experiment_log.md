@@ -69,4 +69,17 @@ Status update:
 - The first queued PU run exposed a calibration-path bug: enabling PU adds a fourth `sample_weight` tensor to the training loader, while `test()` still assumed three tensors when reused for training-fold threshold calibration.
 - Fix commit: `503fab3 Record final DGAPred threshold run`; `test()` now accepts both three-column and four-column batches.
 - Restarted remote screen: `solo5_pu_weighted_fixed`, output directory `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/`.
-- Fold 1 completed after the fix: AUC 0.91128, AUPR 0.90472, ACC 0.83447, MCC 0.66896, threshold 0.790. The run is continuing on later folds.
+- Final fixed five-fold result: AUC 0.91042, AUPR 0.90573, ACC 0.83285, MCC 0.66598.
+- Conclusion: negative ablation. It is below the 5-epoch calibrated-threshold run (AUC 0.91262, AUPR 0.90820, ACC 0.83518, MCC 0.67062), so PU-style negative BCE should not be promoted without redesign.
+
+### 30-Epoch Fold-Local Base Comparator
+
+Command:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name e30_base_quiet_u --epochs 30 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm
+```
+
+Purpose: compare against the completed 30-epoch calibrated-threshold run under the same batch/thread/pin-memory settings, isolating the contribution of fold-local MCC threshold calibration to ACC/MCC.
+
+Status: started on `server-NER`; output will be under `output_*_e30_base_quiet_u`.
