@@ -438,10 +438,10 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     )
     
     _test = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=True,
-                                        num_workers=0, pin_memory=True)
+                                        num_workers=0, pin_memory=args.pin_memory)
 
     _train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True,
-                                                num_workers=0, pin_memory=True)
+                                                num_workers=0, pin_memory=args.pin_memory)
     
     '''配置cuda加速'''
     torch.backends.cudnn.benchmark = True
@@ -699,7 +699,7 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
         ground_u.append(list(side_idx.data.cpu().numpy()))
         
         # 前向传播score_one:classfication score_two:regression
-        scores_one, scores_two = model(
+        model_output = model(
             drug_indices=drug_idx,
             side_indices=side_idx,
             device=device,
@@ -707,6 +707,10 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
             global_side_features=global_side_features,
             epoch=epoch  # ARConv 需要 epoch 参数
         )
+        if len(model_output) == 3:
+            scores_one, scores_two, _ = model_output
+        else:
+            scores_one, scores_two = model_output
         one_label_index = np.nonzero(labels.data.numpy())
         
         # 计算损失
@@ -778,6 +782,8 @@ if __name__ == '__main__':
                         metavar='N', help='PyTorch CPU算子线程数，0表示使用环境默认值')
     parser.add_argument('--torch_interop_threads', type=int, default=0,
                         metavar='N', help='PyTorch CPU算子调度线程数，0表示使用环境默认值')
+    parser.add_argument('--pin_memory', action=argparse.BooleanOptionalAction, default=False,
+                        help='DataLoader pinned memory; disable by default for vGPU/HAMI stability')
     parser.add_argument('--rawpath', type=str, default='pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/',
                         metavar='STRING', help='rawpath')
 
