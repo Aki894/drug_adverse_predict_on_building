@@ -9,6 +9,8 @@
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
 | PU-style negative BCE + threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/results.txt` | 5 | 0.91042 | 0.90573 | 0.83285 | 0.66598 | Negative ablation: below calibrated-threshold screen, so do not promote as the main direction. |
 | Support-aware ADR weighting | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_133135_solo5_support_weighted/results.txt` | 5 | 0.91005 | 0.90612 | 0.82697 | 0.65855 | Negative ablation: below 5-epoch fold-local base. Current weighting is too weak/noisy to promote. |
+| Fold-local graph prior | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_134911_solo5_graph_prior/results.txt` | 5 | 0.91357 | 0.90903 | 0.82870 | 0.66187 | Best current short-run method direction for ranking metrics: +0.00255 AUC and +0.00245 AUPR over 5-epoch base. |
+| Fold-local graph prior + threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_141045_solo5_graph_prior_calibrated_fixed/results.txt` | 5 | 0.91188 | 0.90772 | 0.83296 | 0.66644 | Above 5-epoch base on all four metrics, but sacrifices AUC/AUPR compared with graph prior alone. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.93023 | 0.92643 | 0.85587 | 0.71201 | Completed five-fold long-training candidate. Must be compared against the same-epoch base before being promoted. |
 | Fold-local base comparator | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_121030_e30_base_quiet_u/results.txt` | 30 | 0.92965 | 0.92597 | 0.85550 | 0.71140 | Completed five-fold same-epoch comparator. Calibrated threshold is only slightly higher: +0.00058 AUC, +0.00046 AUPR, +0.00037 ACC, +0.00061 MCC. |
 
@@ -29,7 +31,9 @@
 
 ## Next Validation Gate
 
-The 30-epoch calibrated-threshold run is a real but very small improvement over the same-epoch fold-local base: AUC +0.00058, AUPR +0.00046, ACC +0.00037, and MCC +0.00061. Treat it as a useful decision-layer component, not a sufficient standalone paper contribution. Continue with support-aware ADR weighting and graph/side-risk directions to seek a stronger ranking-metric contribution.
+The 30-epoch calibrated-threshold run is a real but very small improvement over the same-epoch fold-local base: AUC +0.00058, AUPR +0.00046, ACC +0.00037, and MCC +0.00061. Treat it as a useful decision-layer component, not a sufficient standalone paper contribution.
+
+The current best short-run method-level candidate is fold-local graph prior. Its 5-epoch run improves ranking metrics over the 5-epoch base (AUC +0.00255, AUPR +0.00245), while the graph-prior-plus-calibration variant improves ACC/MCC but weakens ranking. The 30-epoch validation run `e30_graph_prior_quiet_u` is still active on `server-NER` (PID `721883`, log `/data/ccc/ADR/logs/e30_graph_prior_quiet_u_20260624_142522.log`). As of the latest check, it has completed 3/5 folds with mean AUC 0.92915, AUPR 0.92474, ACC 0.85478, and MCC 0.70963, which is below the 30-epoch base comparator so far. Keep waiting for the full 5-fold result, but prepare the next candidate rather than assuming graph prior will win.
 
 ## 30-Epoch Fold-Local Base Comparator Progress
 
@@ -67,3 +71,44 @@ PU-style negative BCE weighting has been implemented as a switchable follow-up e
 - Fixed remote screen: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/`.
 - Final fixed screen: AUC 0.91042, AUPR 0.90573, ACC 0.83285, MCC 0.66598.
 - Interpretation: below the 5-epoch threshold-calibration screen (AUC 0.91262, AUPR 0.90820, ACC 0.83518, MCC 0.67062), so this is a negative ablation rather than a publishable main direction.
+
+## Fold-Local Graph Prior Evidence
+
+| Variant | Epochs | AUC | AUPR | ACC | MCC | Interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| Graph prior, max combine, weight 0.5 | 5 | 0.91357 | 0.90903 | 0.82870 | 0.66187 | Best short-run ranking signal so far. Promote to 30-epoch validation. |
+| Graph prior + calibrated threshold | 5 | 0.91188 | 0.90772 | 0.83296 | 0.66644 | Useful if ACC/MCC are prioritized, but not as strong for AUC/AUPR. |
+
+Active validation run:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name e30_graph_prior_quiet_u --epochs 30 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.5 --graph_prior_combine max
+```
+
+Remote status checked on 2026-06-24: PID `721883` is still running. The log reached fold 1 epoch 3 with interim test AUC 0.90641 and AUPR 0.89956; no final fold result is available yet.
+
+Updated remote status checked on 2026-06-24:
+
+| Completed Fold | AUC | AUPR | ACC | MCC | Threshold |
+|---|---:|---:|---:|---:|---:|
+| 1 | 0.92722 | 0.92071 | 0.85275 | 0.70562 | 0.500 |
+| 2 | 0.92939 | 0.92772 | 0.85691 | 0.71385 | 0.500 |
+| 3 | 0.93083 | 0.92578 | 0.85467 | 0.70942 | 0.500 |
+
+Partial mean over 3 folds: AUC 0.92915, AUPR 0.92474, ACC 0.85478, MCC 0.70963. This interim result is weaker than the 30-epoch base comparator (AUC 0.92965, AUPR 0.92597, ACC 0.85550, MCC 0.71140), so graph prior may need lower weight or a different aggregation if the final 5-fold result stays below base.
+
+## Next Candidate: Reliable Negative Filtering
+
+Implemented a new switchable candidate in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+- Switch: `--use_reliable_negative_filter`
+- Main parameter: `--reliable_negative_filter_percentile`, default `90.0`.
+- Mechanism: compute fold-local pseudo-negative risk for every training candidate negative from both drug-neighbor positive evidence and ADR-neighbor positive evidence, remove only candidates above the chosen risk percentile, then sample the remaining pool to match the number of training positives.
+- Scope: training fold only. Test fold remains unchanged.
+- Rationale: the earlier PU-style BCE reduced all suspicious negatives continuously and failed. This version is sharper and more local: it only removes the highest-risk tail from the training negative pool.
+
+Planned first screen:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_reliable_neg_p90 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_reliable_negative_filter --reliable_negative_filter_percentile 90
+```

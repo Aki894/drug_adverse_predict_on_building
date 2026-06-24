@@ -261,8 +261,65 @@ def compute_fold_graph_prior_scores(samples, fold_train, drug_features, side_fea
     return np.clip(np.nan_to_num(combined, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
 
 
-def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, args):
+def reliable_negative_filtering(candidate_negative, sample_size, DAL, drug_features, side_features, args):
+    """剔除训练候选负样本中双侧相似图风险最高的一小段，再等量抽样。"""
+    candidate_negative = np.asarray(candidate_negative)
+    risks = compute_d4_combined_negative_risks(
+        candidate_negative,
+        DAL,
+        drug_features,
+        side_features=side_features
+    )
+    cutoff = np.percentile(risks, args.reliable_negative_filter_percentile)
+    keep_mask = risks <= cutoff
+    filtered_negative = candidate_negative[keep_mask]
+    filtered_risks = risks[keep_mask]
+
+    if len(filtered_negative) < sample_size:
+        print(
+            "[ReliableNeg] filtered pool smaller than requested sample size; "
+            "falling back to full candidate pool"
+        )
+        filtered_negative = candidate_negative
+        filtered_risks = risks
+
+    sampled_idx = np.random.choice(len(filtered_negative), size=sample_size, replace=False)
+    sampled_negative = filtered_negative[sampled_idx]
+    sampled_risks = filtered_risks[sampled_idx]
+
+    args.reliable_negative_candidate_count = int(len(candidate_negative))
+    args.reliable_negative_filtered_count = int(len(filtered_negative))
+    args.reliable_negative_removed_count = int(len(candidate_negative) - len(filtered_negative))
+    args.reliable_negative_sampled_count = int(len(sampled_negative))
+    args.reliable_negative_risk_cutoff = float(cutoff)
+    args.reliable_negative_risk_mean_before = float(risks.mean()) if len(risks) else 0.0
+    args.reliable_negative_risk_mean_after = float(sampled_risks.mean()) if len(sampled_risks) else 0.0
+
+    print("[ReliableNeg] fold-local reliable negative filtering enabled")
+    print(
+        f"[ReliableNeg] candidates={len(candidate_negative)}, kept={len(filtered_negative)}, "
+        f"removed={args.reliable_negative_removed_count}, sampled={len(sampled_negative)}"
+    )
+    print(
+        f"[ReliableNeg] cutoff@p{args.reliable_negative_filter_percentile:.1f}={cutoff:.4f}, "
+        f"risk mean before/after={args.reliable_negative_risk_mean_before:.4f}/"
+        f"{args.reliable_negative_risk_mean_after:.4f}"
+    )
+    return sampled_negative
+
+
+def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, side_features, args):
     """从候选负样本池中抽样，对高假阴性风险负样本降权但不直接删除。"""
+    if args.use_reliable_negative_filter:
+        return reliable_negative_filtering(
+            candidate_negative=candidate_negative,
+            sample_size=sample_size,
+            DAL=DAL,
+            drug_features=drug_features,
+            side_features=side_features,
+            args=args
+        )
+
     if not args.use_d4_similarity_negative_weighting:
         if len(candidate_negative) < sample_size:
             raise ValueError(f"negative candidates ({len(candidate_negative)}) < sample_size ({sample_size})")
@@ -295,7 +352,7 @@ def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL
     return sampled_negative
 
 
-def build_d4_fold_training_data(data_train, data_test, all_negative_candidates, DAL, drug_features, args):
+def build_d4_fold_training_data(data_train, data_test, all_negative_candidates, DAL, drug_features, side_features, args):
     """只在当前fold的训练集内重采样负样本，测试集保持原始划分不动。"""
     data_train = np.asarray(data_train)
     data_test = np.asarray(data_test)
@@ -316,6 +373,7 @@ def build_d4_fold_training_data(data_train, data_test, all_negative_candidates, 
         sample_size=len(train_positive),
         DAL=DAL,
         drug_features=drug_features,
+        side_features=side_features,
         args=args
     )
     fold_train = np.vstack((train_positive, sampled_negative))
@@ -1120,6 +1178,10 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='D4高假阴性风险负样本分位阈值')
     parser.add_argument('--d4_negative_min_weight', type=float, default=0.05,
                         metavar='FLOAT', help='D4高风险负样本最低保留权重')
+    parser.add_argument('--use_reliable_negative_filter', action='store_true',
+                        help='启用fold-local双侧风险可靠负样本分位筛选')
+    parser.add_argument('--reliable_negative_filter_percentile', type=float, default=90.0,
+                        metavar='FLOAT', help='剔除高于该风险分位的训练候选负样本')
     parser.add_argument('--metric_threshold', type=float, default=0.5,
                         metavar='FLOAT', help='计算ACC/MCC使用的默认概率阈值')
     parser.add_argument('--use_calibrated_threshold', action='store_true',
@@ -1212,6 +1274,7 @@ if __name__ == '__main__':
             all_negative_candidates=all_negative_candidates,
             DAL=drug_side.values,
             drug_features=drug_feature,
+            side_features=side_feature,
             args=args
         )
         fold_train_data = attach_pu_negative_weights(

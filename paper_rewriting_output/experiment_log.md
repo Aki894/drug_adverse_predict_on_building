@@ -133,3 +133,57 @@ First graph-prior calibrated attempt:
 - Command used `--use_graph_prior --use_calibrated_threshold`.
 - It failed after fold 1 training because training-fold threshold calibration passes the 5-column graph-prior training loader into `test()`, while `test()` handled only 3-column test batches and 4-column prior/weight batches.
 - Fix: `test()` now accepts 5-column batches as `(drug, side, label, sample_weight, graph_prior)` and uses the final column as the graph prior.
+- Remote GitHub pull temporarily hung at commit `adc4b7d`, so the fixed `main.py` was backed up and uploaded to `server-NER` by `scp`; remote syntax check passed with `python -m py_compile`.
+- Restarted fixed screen: log `/data/ccc/ADR/logs/solo5_graph_prior_calibrated_fixed_20260624_141041.log`.
+
+Five-epoch graph-prior screen:
+
+- Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_134911_solo5_graph_prior/results.txt`
+- Final five-fold result: AUC 0.91357, AUPR 0.90903, ACC 0.82870, MCC 0.66187.
+- Interpretation: best current short-run method-level direction for ranking metrics. Compared with 5-epoch base (AUC 0.91102, AUPR 0.90658, ACC 0.82887, MCC 0.66108), it improves AUC by 0.00255 and AUPR by 0.00245, with nearly unchanged ACC and a small MCC gain.
+
+Five-epoch graph-prior-plus-calibration screen:
+
+- Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_141045_solo5_graph_prior_calibrated_fixed/results.txt`
+- Final five-fold result: AUC 0.91188, AUPR 0.90772, ACC 0.83296, MCC 0.66644.
+- Interpretation: above 5-epoch base on all four metrics, but weaker than graph prior alone on AUC/AUPR. Keep it as a possible threshold-metric variant, not the first mainline.
+
+Thirty-epoch graph-prior validation:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name e30_graph_prior_quiet_u --epochs 30 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.5 --graph_prior_combine max
+```
+
+- Remote PID: `721883`
+- Log: `/data/ccc/ADR/logs/e30_graph_prior_quiet_u_20260624_142522.log`
+- Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_142525_e30_graph_prior_quiet_u/`
+- Status check on 2026-06-24: still running. The log reached fold 1 epoch 3 with interim test AUC 0.90641, AUPR 0.89956, ACC 0.82892, MCC 0.65783.
+
+Later status check on 2026-06-24:
+
+- Remote PID `721883` is still running.
+- Completed fold 1: AUC 0.92722, AUPR 0.92071, ACC 0.85275, MCC 0.70562.
+- Completed fold 2: AUC 0.92939, AUPR 0.92772, ACC 0.85691, MCC 0.71385.
+- Completed fold 3: AUC 0.93083, AUPR 0.92578, ACC 0.85467, MCC 0.70942.
+- Partial 3-fold mean: AUC 0.92915, AUPR 0.92474, ACC 0.85478, MCC 0.70963.
+- Interpretation: weaker than the 30-epoch base comparator so far. Continue the run to 5/5 folds, but prepare a new reliable-negative filtering experiment.
+
+### Reliable Negative Filtering
+
+Implementation status: locally implemented as a switchable follow-up in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+Mechanism:
+
+- Use only current fold training candidates.
+- Compute combined pseudo-negative risk from drug-side and ADR-side similarity evidence.
+- Remove candidate negatives above `--reliable_negative_filter_percentile`.
+- Sample from the remaining pool to match the number of training positives.
+- Keep test fold unchanged.
+
+Planned 5-epoch screening command:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_reliable_neg_p90 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_reliable_negative_filter --reliable_negative_filter_percentile 90
+```
+
+Purpose: test whether filtering only the highest-risk unlabeled negatives is more effective than the failed PU-style global BCE weighting.
