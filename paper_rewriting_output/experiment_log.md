@@ -127,3 +127,9 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_pr
 ```
 
 Purpose: test whether a fold-local prior propagated over drug and ADR similarity graphs can improve ranking metrics. The prior is computed only from the current training fold positives, then added as a small centered logit residual (`weight * (prior - 0.5)`) during training and testing.
+
+First graph-prior calibrated attempt:
+
+- Command used `--use_graph_prior --use_calibrated_threshold`.
+- It failed after fold 1 training because training-fold threshold calibration passes the 5-column graph-prior training loader into `test()`, while `test()` handled only 3-column test batches and 4-column prior/weight batches.
+- Fix: `test()` now accepts 5-column batches as `(drug, side, label, sample_weight, graph_prior)` and uses the final column as the graph prior.

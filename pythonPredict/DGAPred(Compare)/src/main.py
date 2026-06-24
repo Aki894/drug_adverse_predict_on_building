@@ -981,7 +981,9 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
     with torch.no_grad():
       for step, batch in pbar:
         graph_priors = None
-        if len(batch) == 4 and args is not None and args.use_graph_prior:
+        if len(batch) == 5 and args is not None and args.use_graph_prior:
+            drug_idx, side_idx, ratings, _, graph_priors = batch
+        elif len(batch) == 4 and args is not None and args.use_graph_prior:
             drug_idx, side_idx, ratings, graph_priors = batch
         elif len(batch) == 4:
             drug_idx, side_idx, ratings, _ = batch
