@@ -63,3 +63,10 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_pu_weigh
 ```
 
 Purpose: test whether treating suspicious unobserved negatives as lower-confidence negatives improves ranking metrics beyond threshold calibration alone.
+
+Status update:
+
+- The first queued PU run exposed a calibration-path bug: enabling PU adds a fourth `sample_weight` tensor to the training loader, while `test()` still assumed three tensors when reused for training-fold threshold calibration.
+- Fix commit: `503fab3 Record final DGAPred threshold run`; `test()` now accepts both three-column and four-column batches.
+- Restarted remote screen: `solo5_pu_weighted_fixed`, output directory `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/`.
+- Fold 1 completed after the fix: AUC 0.91128, AUPR 0.90472, ACC 0.83447, MCC 0.66896, threshold 0.790. The run is continuing on later folds.

@@ -48,4 +48,6 @@ PU-style negative BCE weighting has been implemented as a switchable follow-up e
 - Default behavior: off, so existing baseline/calibrated-threshold runs are unchanged.
 - Mechanism: positive samples keep weight 1.0; negative samples receive a BCE weight based on drug-side combined pseudo-negative risk.
 - Risk sources: drug similarity evidence plus optional ADR similarity evidence from MESH/GDA matrices.
-- First queued remote screen: `/data/ccc/ADR/logs/solo5_pu_weighted_wait_*.log`, configured to wait for the current 30-epoch calibrated-threshold run before starting.
+- First queued remote screen exposed a calibration-path batch shape bug and was replaced by `solo5_pu_weighted_fixed`.
+- Fixed remote screen: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/`.
+- Fold 1 after the fix: AUC 0.91128, AUPR 0.90472, ACC 0.83447, MCC 0.66896, threshold 0.790. The remaining folds are still running.
