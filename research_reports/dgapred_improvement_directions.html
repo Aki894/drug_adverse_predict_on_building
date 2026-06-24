@@ -152,7 +152,7 @@
   <article class="paper">
     <header>
       <h1>DGAPred 指标提升方向调研报告</h1>
-      <div class="meta">生成时间：2026-06-24 21:32 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：找到可在当前 DGAPred 代码上实现、可验证提升 AUC/AUPR/ACC/MCC 的方向</div>
+      <div class="meta">生成时间：2026-06-24 21:47 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：找到可在当前 DGAPred 代码上实现、可验证提升 AUC/AUPR/ACC/MCC 的方向</div>
     </header>
 
     <section>
@@ -165,11 +165,11 @@
       </div>
       <div class="callout">
         <strong>推荐下一轮主线</strong>
-        当前已启动 <code>solo5_support_weighted</code>，用 fold-local ADR 支持度调整 BCE 样本权重，检验它是否能比单纯阈值后处理更明显地改善 AUC/AUPR。若该方向失败，下一轮应转向 <code>side-aware 伪负风险</code> 或 <code>fold-local 图传播先验</code>。
+        <code>solo5_support_weighted</code> 已完成，低于 5 epoch base，作为负向消融保留。下一步改用 <code>fold-local 图传播先验</code>，只基于训练折正样本和 drug/ADR 相似图生成 pair 级先验，尝试直接改善 AUC/AUPR。
       </div>
       <div class="callout">
         <strong>实现状态更新</strong>
-        <code>PU-weighted BCE</code> 五折初筛已完成，均值为 AUC 0.91042、AUPR 0.90573、ACC 0.83285、MCC 0.66598，低于 5 epoch 阈值校准结果；30 epoch 阈值校准五折验证均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201；同配置未校准 base 均值为 AUC 0.92965、AUPR 0.92597、ACC 0.85550、MCC 0.71140。<code>solo5_support_weighted</code> 已在远程运行。
+        <code>PU-weighted BCE</code> 五折初筛已完成，均值为 AUC 0.91042、AUPR 0.90573、ACC 0.83285、MCC 0.66598；<code>Support-aware ADR weighting</code> 五折初筛均值为 AUC 0.91005、AUPR 0.90612、ACC 0.82697、MCC 0.65855；两者均低于 5 epoch base。30 epoch 阈值校准五折验证均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201；同配置未校准 base 均值为 AUC 0.92965、AUPR 0.92597、ACC 0.85550、MCC 0.71140。
       </div>
     </section>
 
@@ -221,7 +221,8 @@
           <tr><td>PU-weighted BCE + threshold calibration</td><td>5</td><td>0.91042</td><td>0.90573</td><td>0.83285</td><td>0.66598</td><td>低于阈值校准短训结果，作为负向消融保留。</td></tr>
           <tr><td>Fold-local threshold calibration</td><td>30</td><td>0.93023</td><td>0.92643</td><td>0.85587</td><td>0.71201</td><td>五折长训完成；需等待同配置 30 epoch base 完成后才能定性。</td></tr>
           <tr><td>Fold-local base comparator</td><td>30</td><td>0.92965</td><td>0.92597</td><td>0.85550</td><td>0.71140</td><td>同配置五折对照完成；校准版小幅胜出，但幅度不足以单独作为主贡献。</td></tr>
-          <tr><td>Support-aware ADR weighting</td><td>5</td><td colspan="4">运行中</td><td><span class="warn">远程筛选中</span>；测试低支持 ADR 权重是否带来更强排序指标增益。</td></tr>
+          <tr><td>Support-aware ADR weighting</td><td>5</td><td>0.91005</td><td>0.90612</td><td>0.82697</td><td>0.65855</td><td>低于 5 epoch base，作为负向消融保留。</td></tr>
+          <tr><td>Fold-local graph prior</td><td>5</td><td colspan="4">待运行</td><td><span class="warn">下一轮</span>；用训练折正样本在相似图上传播先验并融合到 logit。</td></tr>
         </tbody>
       </table>
     </section>

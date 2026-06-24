@@ -113,3 +113,17 @@ Remote run:
 - Log: `/data/ccc/ADR/logs/solo5_support_weighted_20260624_133132.log`
 - Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_133135_solo5_support_weighted/`
 - Fold 1 startup weight diagnostics: low-support ADR count 508, zero-support negative samples 913, mean weights all/positive/negative 0.9764/1.0060/0.9469.
+- Final five-fold screen: AUC 0.91005, AUPR 0.90612, ACC 0.82697, MCC 0.65855.
+- Interpretation: negative ablation. It is below the 5-epoch fold-local base (AUC 0.91102, AUPR 0.90658, ACC 0.82887, MCC 0.66108), so the current conservative support-aware weighting should not be promoted.
+
+### Fold-Local Graph Prior
+
+Implementation status: locally implemented as a switchable follow-up in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+Planned 5-epoch screening command:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_prior --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.5 --graph_prior_combine max
+```
+
+Purpose: test whether a fold-local prior propagated over drug and ADR similarity graphs can improve ranking metrics. The prior is computed only from the current training fold positives, then added as a small centered logit residual (`weight * (prior - 0.5)`) during training and testing.

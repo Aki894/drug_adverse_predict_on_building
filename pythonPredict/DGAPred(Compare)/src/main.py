@@ -221,6 +221,46 @@ def attach_support_aware_weights(fold_train, args):
     return np.column_stack((fold_train[:, :3], weights.astype(np.float32)))
 
 
+def compute_fold_graph_prior_scores(samples, fold_train, drug_features, side_features, args):
+    """用当前fold训练正样本在drug/ADR相似图上传播得到pair级先验分数。"""
+    samples = np.asarray(samples)
+    fold_train = np.asarray(fold_train)
+    positive_train = fold_train[fold_train[:, 2] > 0, :3]
+    priors = []
+
+    if len(samples) == 0 or len(positive_train) == 0:
+        return np.zeros(len(samples), dtype=np.float32)
+
+    drug_ids = samples[:, 0].astype(int)
+    side_ids = samples[:, 1].astype(int)
+
+    drug_sim = build_d4_drug_similarity(drug_features)
+    side_sim = build_d4_side_similarity(side_features)
+    drug_prior = np.zeros(len(samples), dtype=np.float32)
+    side_prior = np.zeros(len(samples), dtype=np.float32)
+
+    for side_idx in np.unique(side_ids):
+        positive_drugs = positive_train[positive_train[:, 1].astype(int) == side_idx, 0].astype(int)
+        if len(positive_drugs) == 0:
+            continue
+        sample_idx = np.flatnonzero(side_ids == side_idx)
+        values = drug_sim[drug_ids[sample_idx]][:, positive_drugs]
+        drug_prior[sample_idx] = values.mean(axis=1) if args.graph_prior_combine == 'mean' else values.max(axis=1)
+    priors.append(drug_prior)
+
+    for drug_idx in np.unique(drug_ids):
+        positive_sides = positive_train[positive_train[:, 0].astype(int) == drug_idx, 1].astype(int)
+        if len(positive_sides) == 0:
+            continue
+        sample_idx = np.flatnonzero(drug_ids == drug_idx)
+        values = side_sim[side_ids[sample_idx]][:, positive_sides]
+        side_prior[sample_idx] = values.mean(axis=1) if args.graph_prior_combine == 'mean' else values.max(axis=1)
+    priors.append(side_prior)
+
+    combined = np.maximum.reduce(priors) if args.graph_prior_combine == 'max' else np.mean(priors, axis=0)
+    return np.clip(np.nan_to_num(combined, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
+
+
 def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, args):
     """从候选负样本池中抽样，对高假阴性风险负样本降权但不直接删除。"""
     if not args.use_d4_similarity_negative_weighting:
@@ -567,12 +607,38 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     # 直接处理训练测试数据，无需额外函数
     data_train = np.array(data_train)
     data_test = np.array(data_test)
+    train_weights = data_train[:, 3] if data_train.shape[1] > 3 else np.ones(len(data_train), dtype=np.float32)
+
+    train_graph_prior = None
+    test_graph_prior = None
+    if args.use_graph_prior:
+        train_graph_prior = compute_fold_graph_prior_scores(
+            samples=data_train[:, :3],
+            fold_train=data_train[:, :3],
+            drug_features=drug_feature,
+            side_features=side_feature,
+            args=args
+        )
+        test_graph_prior = compute_fold_graph_prior_scores(
+            samples=data_test[:, :3],
+            fold_train=data_train[:, :3],
+            drug_features=drug_feature,
+            side_features=side_feature,
+            args=args
+        )
+        args.graph_prior_train_mean = float(train_graph_prior.mean())
+        args.graph_prior_test_mean = float(test_graph_prior.mean())
+        print("[GraphPrior] fold-local graph prior enabled")
+        print(
+            f"[GraphPrior] combine={args.graph_prior_combine}, weight={args.graph_prior_weight:.4f}, "
+            f"train/test mean={args.graph_prior_train_mean:.4f}/{args.graph_prior_test_mean:.4f}"
+        )
     
     train_indices = (
         data_train[:, 0].astype(int),  # drug_indices
         data_train[:, 1].astype(int),  # side_indices
         data_train[:, 2],              # labels
-        data_train[:, 3] if data_train.shape[1] > 3 else np.ones(len(data_train), dtype=np.float32)
+        train_weights
     )
     
     test_indices = (
@@ -582,17 +648,32 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     )
     
     '''构建训练集和测试集'''
-    trainset = torch.utils.data.TensorDataset(
-        torch.LongTensor(train_indices[0]),  # drug_indices
-        torch.LongTensor(train_indices[1]),  # side_indices
-        torch.FloatTensor(train_indices[2]), # labels
-        torch.FloatTensor(train_indices[3])  # sample weights
-    )
-    testset = torch.utils.data.TensorDataset(
-        torch.LongTensor(test_indices[0]),
-        torch.LongTensor(test_indices[1]),
-        torch.FloatTensor(test_indices[2])
-    )
+    if args.use_graph_prior:
+        trainset = torch.utils.data.TensorDataset(
+            torch.LongTensor(train_indices[0]),  # drug_indices
+            torch.LongTensor(train_indices[1]),  # side_indices
+            torch.FloatTensor(train_indices[2]), # labels
+            torch.FloatTensor(train_indices[3]), # sample weights
+            torch.FloatTensor(train_graph_prior) # fold-local graph prior
+        )
+        testset = torch.utils.data.TensorDataset(
+            torch.LongTensor(test_indices[0]),
+            torch.LongTensor(test_indices[1]),
+            torch.FloatTensor(test_indices[2]),
+            torch.FloatTensor(test_graph_prior)
+        )
+    else:
+        trainset = torch.utils.data.TensorDataset(
+            torch.LongTensor(train_indices[0]),  # drug_indices
+            torch.LongTensor(train_indices[1]),  # side_indices
+            torch.FloatTensor(train_indices[2]), # labels
+            torch.FloatTensor(train_indices[3])  # sample weights
+        )
+        testset = torch.utils.data.TensorDataset(
+            torch.LongTensor(test_indices[0]),
+            torch.LongTensor(test_indices[1]),
+            torch.FloatTensor(test_indices[2])
+        )
     
     _test = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=True,
                                         num_workers=0, pin_memory=args.pin_memory)
@@ -799,7 +880,10 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
         disable=args.disable_tqdm if args is not None else False
     )
     for step, batch in pbar:
-        if len(batch) == 4:
+        graph_priors = None
+        if len(batch) == 5:
+            drug_idx, side_idx, ratings, sample_weights, graph_priors = batch
+        elif len(batch) == 4:
             drug_idx, side_idx, ratings, sample_weights = batch
         else:
             drug_idx, side_idx, ratings = batch
@@ -826,6 +910,9 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
         else:
             logits, reconstruction = model_output
             contrastive_loss = None
+
+        if args.use_graph_prior and graph_priors is not None:
+            logits = logits + float(args.graph_prior_weight) * (graph_priors.to(device) - 0.5)
         
         one_label_index = np.nonzero(labels.data.numpy())
         
@@ -893,7 +980,10 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
     )
     with torch.no_grad():
       for step, batch in pbar:
-        if len(batch) == 4:
+        graph_priors = None
+        if len(batch) == 4 and args is not None and args.use_graph_prior:
+            drug_idx, side_idx, ratings, graph_priors = batch
+        elif len(batch) == 4:
             drug_idx, side_idx, ratings, _ = batch
         else:
             drug_idx, side_idx, ratings = batch
@@ -916,6 +1006,8 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
             scores_one, scores_two, _ = model_output
         else:
             scores_one, scores_two = model_output
+        if args is not None and args.use_graph_prior and graph_priors is not None:
+            scores_one = scores_one + float(args.graph_prior_weight) * (graph_priors.to(device) - 0.5)
         one_label_index = np.nonzero(labels.data.numpy())
         
         # 计算损失
@@ -1056,6 +1148,12 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='低支持ADR未观测负样本最大降权比例')
     parser.add_argument('--support_negative_min_weight', type=float, default=0.3,
                         metavar='FLOAT', help='低支持ADR未观测负样本最低BCE权重')
+    parser.add_argument('--use_graph_prior', action='store_true',
+                        help='启用fold-local drug/ADR相似图先验logit residual')
+    parser.add_argument('--graph_prior_weight', type=float, default=0.5,
+                        metavar='FLOAT', help='图先验加入classification logit的权重')
+    parser.add_argument('--graph_prior_combine', type=str, default='max',
+                        choices=['max', 'mean'], help='融合drug侧和ADR侧图先验的方式')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
