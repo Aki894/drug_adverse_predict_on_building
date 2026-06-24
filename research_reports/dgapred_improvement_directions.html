@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DGAPred 指标提升方向调研报告</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --paper: #ffffff;
+      --ink: #1d2733;
+      --muted: #617080;
+      --line: #dbe2ea;
+      --blue: #2457a6;
+      --green: #176f4d;
+      --amber: #8a5a00;
+      --red: #9b2c2c;
+      --chip: #edf2f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 30px;
+      line-height: 1.25;
+      margin: 0 0 8px;
+      letter-spacing: 0;
+    }
+    h2 {
+      font-size: 22px;
+      margin: 30px 0 12px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+    }
+    h3 {
+      font-size: 17px;
+      margin: 20px 0 8px;
+    }
+    p { margin: 8px 0 12px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--chip);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .paper {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 1px 2px rgba(20, 31, 43, 0.04);
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .summary-grid, .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+    }
+    .tile, .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+    .tile strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 2px;
+    }
+    .tile span, .card .note { color: var(--muted); font-size: 13px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f4f8;
+      text-align: left;
+      font-weight: 650;
+    }
+    .rank {
+      display: inline-block;
+      min-width: 26px;
+      border-radius: 999px;
+      text-align: center;
+      color: #fff;
+      background: var(--blue);
+      font-weight: 700;
+      padding: 1px 7px;
+    }
+    .tag {
+      display: inline-block;
+      background: var(--chip);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin: 2px 4px 2px 0;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .good { color: var(--green); font-weight: 650; }
+    .warn { color: var(--amber); font-weight: 650; }
+    .risk { color: var(--red); font-weight: 650; }
+    .callout {
+      border-left: 4px solid var(--blue);
+      background: #f3f7fd;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+    .callout strong { display: block; margin-bottom: 3px; }
+    ol, ul { padding-left: 22px; }
+    li { margin: 5px 0; }
+    @media (max-width: 820px) {
+      main { padding: 20px 14px 40px; }
+      .paper { padding: 18px; }
+      .summary-grid, .cards { grid-template-columns: 1fr; }
+      table { font-size: 13px; }
+      th, td { padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <article class="paper">
+    <header>
+      <h1>DGAPred 指标提升方向调研报告</h1>
+      <div class="meta">生成时间：2026-06-24 18:37 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：找到可在当前 DGAPred 代码上实现、可验证提升 AUC/AUPR/ACC/MCC 的方向</div>
+    </header>
+
+    <section>
+      <h2>一、执行摘要</h2>
+      <p>当前 DGAPred 项目的主要问题不是“模型不够复杂”，而是标签矩阵稀疏、未观测 0 被当成负样本、ADR 低支持严重、不同相似性矩阵分布不一致，以及固定 0.5 阈值不适合 MCC/ACC。已有 5 epoch 远程实验显示，<span class="good">fold-local 阈值校准</span>是当前最稳的短期增益来源；D4 相似性负采样仅带来很小 AUC/AUPR 提升，暂不适合作为主贡献。</p>
+      <div class="summary-grid">
+        <div class="tile"><strong>23,395</strong><span>当前标签矩阵正样本数</span></div>
+        <div class="tile"><strong>438,212</strong><span>未观测 0，实际并非严格真负</span></div>
+        <div class="tile"><strong>517 / 1019</strong><span>正样本数 ≤ 5 的 ADR 数量</span></div>
+      </div>
+      <div class="callout">
+        <strong>推荐下一轮主线</strong>
+        以“训练目标和采样更适配 positive-unlabeled ADR 标签”为主线，优先测试 <code>PU-weighted BCE / nnPU 风格损失</code>、<code>低支持感知采样</code>、<code>side-aware 伪负风险评分</code>，并保留已经有效的 <code>fold-local threshold calibration</code> 作为决策层组件。
+      </div>
+    </section>
+
+    <section>
+      <h2>二、当前项目实证约束</h2>
+      <table>
+        <thead>
+          <tr><th>问题</th><th>本地证据</th><th>对指标的影响</th><th>可改代码位置</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>未观测 0 被当作负样本</td>
+            <td><code>drug_side.csv</code> 中正样本占比约 5.07%；原始文件只列已知正样本。</td>
+            <td>伪负样本会把潜在正样本推向负类，拖累 AUC/AUPR，也影响阈值指标。</td>
+            <td><code>Extract_positive_negative_samples</code>、<code>build_d4_fold_training_data</code>、训练 loss。</td>
+          </tr>
+          <tr>
+            <td>ADR 侧低支持严重</td>
+            <td>正样本数 ≤ 1 的 ADR 有 241 个，≤ 5 的 ADR 有 517 个。</td>
+            <td>测试折中低支持 ADR 方差大，MCC/ACC 受阈值影响明显。</td>
+            <td>KFold 前样本构造、采样权重、loss 权重。</td>
+          </tr>
+          <tr>
+            <td>特征分布异质</td>
+            <td><code>drug_ge_sim</code> 含负值，统计分布不同于 RDKit/DGen/side 相似度。</td>
+            <td>未经归一化的异质相似度可能造成表示噪声或某一视图主导。</td>
+            <td><code>load_drug_feature</code>、<code>load_adr_feature</code>、feature interaction attention。</td>
+          </tr>
+          <tr>
+            <td>固定 0.5 阈值</td>
+            <td>5 epoch 实验中 fold-local 阈值校准把 MCC 从 0.66108 提升到 0.67062。</td>
+            <td>不改变排序模型时，ACC/MCC 仍可通过训练折校准提升。</td>
+            <td>已实现 <code>--use_calibrated_threshold</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>三、当前已验证实验结果</h2>
+      <table>
+        <thead>
+          <tr><th>实验</th><th>Epochs</th><th>AUC</th><th>AUPR</th><th>ACC</th><th>MCC</th><th>结论</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Fold-local base</td><td>5</td><td>0.91102</td><td>0.90658</td><td>0.82887</td><td>0.66108</td><td>当前对照。</td></tr>
+          <tr><td>D4 similarity negative weighting</td><td>5</td><td>0.91138</td><td>0.90698</td><td>0.82806</td><td>0.66116</td><td>提升太小，不建议作为主线。</td></tr>
+          <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td><span class="good">当前最稳信号</span>，正在等待 30 epoch 验证。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>四、文献依据与可借鉴模式</h2>
+      <table>
+        <thead>
+          <tr><th>方向</th><th>代表依据</th><th>能转化为 DGAPred 的点</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>可靠负样本 / PU learning</td>
+            <td>Zheng et al., <a href="https://link.springer.com/article/10.1186/s12859-018-2563-x">Inverse similarity and reliable negative samples for drug side-effect prediction</a>; DDI-PULearn 的正-未标注学习思路。</td>
+            <td>把未观测 0 视作 unlabeled，而不是同等可信负样本；用相似性和先验风险给训练负样本降权或筛选。</td>
+          </tr>
+          <tr>
+            <td>多视图 drug/ADR 表征</td>
+            <td>多视图 drug side-effect association prediction、multi-kernel/multi-knowledge graph 类工作。</td>
+            <td>当前已有 RDKit/DGen/GE 与 MESH/GDA，可做 view-level gating、视图归一化、视图 dropout，而不是盲目加深网络。</td>
+          </tr>
+          <tr>
+            <td>图与相似性传播</td>
+            <td>药物副作用预测中常见 GNN、heterogeneous graph、attention/capsule 网络。</td>
+            <td>当前模型按 pair batch 计算，没有显式利用全局 drug-ADR 二部图传播；可加入轻量 label propagation 或 PPR-style prior。</td>
+          </tr>
+          <tr>
+            <td>不平衡分类阈值与 MCC</td>
+            <td>Boughorbel et al., <a href="https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0177678">Optimal classifier for imbalanced data using MCC</a>。</td>
+            <td>已实现训练折阈值校准；可扩展为 Platt/temperature calibration 或 per-support-bin threshold。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>五、候选改进方向优先级</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>优先级</th><th>方向</th><th>针对问题</th><th>实现方案</th><th>预期影响</th><th>风险</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="rank">1</span></td>
+            <td><strong>PU-weighted BCE / nnPU 风格训练损失</strong></td>
+            <td>0 标签不是可靠真负；当前 BCE 对正负同等信任。</td>
+            <td>为负样本引入可靠度权重 <code>w_neg = 1 - risk</code>；或按正类先验估计 PU risk。先做保守版本：只在 BCE 中对负样本加权，不改变测试集。</td>
+            <td><span class="good">可能提升 AUC/AUPR</span>，比单纯采样更连续、更稳定。</td>
+            <td>权重过低会降低区分硬负样本能力；需要 ablation。</td>
+          </tr>
+          <tr>
+            <td><span class="rank">2</span></td>
+            <td><strong>side-aware 伪负风险评分</strong></td>
+            <td>当前 D4 只用 drug 相似性，高风险估计不足。</td>
+            <td>负样本风险 = drug-neighbor positive evidence + ADR-neighbor positive evidence。利用 <code>side_mesh_sim</code> 和 <code>adr_GDisease_sim</code> 对相似 ADR 传播风险。</td>
+            <td>比现有 D4 负采样更贴合 ADR 低支持问题，可能提升 AUPR。</td>
+            <td>ADR 相似性过强可能把难负样本误判为伪负。</td>
+          </tr>
+          <tr>
+            <td><span class="rank">3</span></td>
+            <td><strong>低支持感知采样 / loss reweighting</strong></td>
+            <td>ADR 单例/低支持样本多，训练中难以稳定学习。</td>
+            <td>按 drug/ADR 支持度给正样本和负样本分桶；对低支持 ADR 的正样本适度加权，对其负样本降低置信。</td>
+            <td>可能提升低支持区域召回和 AUPR；与阈值校准互补。</td>
+            <td>过度加权会牺牲高支持 ADR 的总体 ACC。</td>
+          </tr>
+          <tr>
+            <td><span class="rank">4</span></td>
+            <td><strong>视图归一化 + view dropout/gating</strong></td>
+            <td>GE 相似度含负值且分布不同，特征视图质量不均。</td>
+            <td>对每个相似性矩阵做可选 min-max/z-score；训练时随机 drop 一个 drug view 或加入可学习 view gate。</td>
+            <td>提高表示稳健性，减少某一噪声视图主导。</td>
+            <td>效果依赖视图质量；实现要保持 ablation 开关。</td>
+          </tr>
+          <tr>
+            <td><span class="rank">5</span></td>
+            <td><strong>轻量 label propagation / prior score 融合</strong></td>
+            <td>当前模型 pair-wise 训练，未显式利用全局相似图传播。</td>
+            <td>离线计算 drug/ADR 相似图上的传播先验，例如相似 drug 对 ADR 的 max/mean positive score，再作为额外输入或 logit residual。</td>
+            <td>可能直接提升冷门 ADR 和稀疏区域排序。</td>
+            <td>要严格 fold-local，不能用测试正样本泄漏进训练先验。</td>
+          </tr>
+          <tr>
+            <td><span class="rank">6</span></td>
+            <td><strong>温度/概率校准扩展</strong></td>
+            <td>固定阈值已证明不是最优。</td>
+            <td>在训练 fold 上做 temperature scaling 或 Platt scaling，再选阈值。</td>
+            <td>主要提升 ACC/MCC，AUC/AUPR 通常不变。</td>
+            <td>论文贡献偏后处理，需和训练改进组合。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>六、推荐实验路线</h2>
+      <h3>路线 A：最快验证 AUC/AUPR 提升</h3>
+      <ol>
+        <li>实现 <code>--use_pu_negative_weighting</code>，在 BCE 上对负样本使用 fold-local risk 权重。</li>
+        <li>先跑 5 epoch，对比 base、D4 sampling、PU-weighted BCE、PU-weighted BCE + calibrated threshold。</li>
+        <li>如果 AUC/AUPR 至少提升 0.002 且 ACC/MCC 不下降，再跑 30 epoch。</li>
+      </ol>
+
+      <h3>路线 B：针对 ADR 低支持问题</h3>
+      <ol>
+        <li>计算每个 ADR 的正样本支持度，分为 singleton、low、mid、high。</li>
+        <li>实现 support-aware loss：低支持 ADR 正样本轻微加权，低支持 ADR 未观测负样本降置信。</li>
+        <li>报告总体指标和低支持 ADR 子集指标，形成论文分析亮点。</li>
+      </ol>
+
+      <h3>路线 C：特征稳健性与视图质量</h3>
+      <ol>
+        <li>加入 <code>--normalize_similarity_views</code>，统一 GE/RDKit/DGen/MESH/GDA 分布。</li>
+        <li>加入 <code>--view_dropout</code> 或 learned view gate，做视图消融。</li>
+        <li>若整体指标提升不大，也可作为解释性/稳健性补充实验。</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>七、下一步最建议立即实现的改动</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>1. PU-weighted BCE</h3>
+          <p>把当前风险评分从“采样概率”改为“负样本 loss 权重”。这比删除/少采样更平滑，能保留困难负样本但降低可疑负样本的破坏性。</p>
+          <div class="note"><span class="tag">主攻 AUC/AUPR</span><span class="tag">训练集内完成</span></div>
+        </div>
+        <div class="card">
+          <h3>2. side-aware risk</h3>
+          <p>把 ADR 相似性纳入伪负风险。DGAPred 当前 ADR 低支持严重，单用 drug 相似性解释不足。</p>
+          <div class="note"><span class="tag">主攻 AUPR</span><span class="tag">利用现有 side matrices</span></div>
+        </div>
+        <div class="card">
+          <h3>3. support-aware analysis</h3>
+          <p>把低支持 ADR 作为单独评价切片。即使总体提升小，也能形成更有说服力的论文结果分析。</p>
+          <div class="note"><span class="tag">论文友好</span><span class="tag">可解释性强</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>八、风险控制</h2>
+      <ul>
+        <li><span class="risk">不要</span>删除测试集难样本作为正式结果。用户已说明 ADR 测试集约定不用改，但正式论文仍应避免让提升来自测试任务缩小。</li>
+        <li><span class="warn">所有先验和风险分数</span>应 fold-local 构造，不能使用当前测试 fold 的正样本来指导训练。</li>
+        <li><span class="warn">低支持实体清洗</span>只能作为数据集变体，不应和原始任务 baseline 混报。</li>
+        <li><span class="good">阈值校准</span>可保留，但论文主贡献最好仍包含训练目标或表征层面的改进，否则容易被认为只是后处理。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>九、参考来源</h2>
+      <ol>
+        <li>Zheng, Y., Peng, H., Ghosh, S., Lan, C., &amp; Li, J. Inverse similarity and reliable negative samples for drug side-effect prediction. <em>BMC Bioinformatics</em>, 2019. <a href="https://link.springer.com/article/10.1186/s12859-018-2563-x">https://link.springer.com/article/10.1186/s12859-018-2563-x</a></li>
+        <li>Zheng, Y. et al. DDI-PULearn: a positive-unlabeled learning method for large-scale prediction of drug-drug interactions. <em>BMC Bioinformatics</em>, 2019.</li>
+        <li>Boughorbel, S., Jarray, F., &amp; El-Anbari, M. Optimal classifier for imbalanced data using Matthews Correlation Coefficient metric. <em>PLOS ONE</em>, 2017. <a href="https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0177678">https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0177678</a></li>
+        <li>本地证据：<code>pythonPredict/DGAPred(Compare)/dataset_analysis_report.txt</code>、<code>paper_rewriting_output/evidence_bank.md</code>、<code>paper_rewriting_output/sota_gap_map.md</code>。</li>
+      </ol>
+    </section>
+  </article>
+</main>
+</body>
+</html>
