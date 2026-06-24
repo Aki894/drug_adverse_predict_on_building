@@ -82,4 +82,11 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name e30_base_quiet
 
 Purpose: compare against the completed 30-epoch calibrated-threshold run under the same batch/thread/pin-memory settings, isolating the contribution of fold-local MCC threshold calibration to ACC/MCC.
 
-Status: started on `server-NER`; output will be under `output_*_e30_base_quiet_u`.
+Status: running on `server-NER`.
+
+- Remote output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_121030_e30_base_quiet_u/results.txt`
+- Fold 1: AUC 0.92779, AUPR 0.92238, ACC 0.85435, MCC 0.70882, threshold 0.500.
+- Fold 2: AUC 0.93009, AUPR 0.92735, ACC 0.85873, MCC 0.71754, threshold 0.500.
+- Two-fold mean: AUC 0.92894, AUPR 0.92487, ACC 0.85654, MCC 0.71318.
+
+Interim interpretation: the first two base folds are slightly above the corresponding calibrated-threshold folds on ACC/MCC. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds.

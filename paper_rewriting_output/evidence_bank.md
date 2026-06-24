@@ -27,7 +27,16 @@
 
 ## Next Validation Gate
 
-Use the completed 30-epoch calibrated-threshold five-fold run as the current main evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Remote run `e30_base_quiet_u` has been started for this stronger same-epoch comparison.
+Use the completed 30-epoch calibrated-threshold five-fold run as provisional evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Remote run `e30_base_quiet_u` is in progress. Its first two folds average AUC 0.92894, AUPR 0.92487, ACC 0.85654, and MCC 0.71318, which is slightly above the corresponding calibrated-threshold first-two-fold mean on ACC/MCC; wait for all five folds before making the final claim.
+
+## 30-Epoch Fold-Local Base Comparator Progress
+
+| Fold | AUC | AUPR | ACC | MCC | Threshold |
+|---|---:|---:|---:|---:|---:|
+| 1 | 0.92779 | 0.92238 | 0.85435 | 0.70882 | 0.500 |
+| 2 | 0.93009 | 0.92735 | 0.85873 | 0.71754 | 0.500 |
+
+Current two-fold mean: AUC 0.92894, AUPR 0.92487, ACC 0.85654, MCC 0.71318.
 
 ## 30-Epoch Calibrated Threshold Progress
 
