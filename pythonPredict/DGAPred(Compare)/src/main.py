@@ -839,7 +839,11 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
         disable=args.disable_tqdm if args is not None else False
     )
     with torch.no_grad():
-      for step, (drug_idx, side_idx, ratings) in pbar:
+      for step, batch in pbar:
+        if len(batch) == 4:
+            drug_idx, side_idx, ratings, _ = batch
+        else:
+            drug_idx, side_idx, ratings = batch
         # 构建二分类标签
         labels = (ratings > 0).float()
         

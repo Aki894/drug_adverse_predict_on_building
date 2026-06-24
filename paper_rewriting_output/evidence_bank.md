@@ -7,7 +7,7 @@
 | Fold-local base | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_084455_solo5_foldlocal_base/results.txt` | 5 | 0.91102 | 0.90658 | 0.82887 | 0.66108 | Baseline after fold-local negative sampling cleanup. |
 | D4 similarity negative weighting | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_090556_solo5_d4_neg_nopin/results.txt` | 5 | 0.91138 | 0.90698 | 0.82806 | 0.66116 | Tiny AUC/AUPR gain, no useful ACC/MCC gain. Not strong enough as the main method. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
-| Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.92848 | 0.92466 | 0.85378 | 0.70798 | In-progress three-fold mean; strong long-training confirmation so far. |
+| Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.93023 | 0.92643 | 0.85587 | 0.71201 | Completed five-fold long-training confirmation; strongest current main direction. |
 
 ## Fold-Level Calibrated Thresholds
 
@@ -26,7 +26,7 @@
 
 ## Next Validation Gate
 
-Finish the 30-epoch calibrated-threshold five-fold run and compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. The current three-fold mean is already substantially above the 5-epoch screening result, but the five-fold mean is required before finalizing the claim.
+Use the completed 30-epoch calibrated-threshold five-fold run as the current main evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings when time allows. The queued PU-weighted BCE screen is now the next validation gate for a possible training-objective improvement beyond threshold calibration.
 
 ## 30-Epoch Calibrated Threshold Progress
 
@@ -35,8 +35,10 @@ Finish the 30-epoch calibrated-threshold five-fold run and compare against a 30-
 | 1 | 0.92582 | 0.92032 | 0.85157 | 0.70317 | 0.510 |
 | 2 | 0.92957 | 0.92745 | 0.85574 | 0.71240 | 0.420 |
 | 3 | 0.93004 | 0.92620 | 0.85403 | 0.70837 | 0.450 |
+| 4 | 0.93180 | 0.92668 | 0.85948 | 0.71898 | 0.480 |
+| 5 | 0.93393 | 0.93148 | 0.85852 | 0.71712 | 0.530 |
 
-Current three-fold mean: AUC 0.92848, AUPR 0.92466, ACC 0.85378, MCC 0.70798.
+Final five-fold mean: AUC 0.93023, AUPR 0.92643, ACC 0.85587, MCC 0.71201.
 
 ## Implemented Follow-Up Direction
 

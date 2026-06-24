@@ -169,7 +169,7 @@
       </div>
       <div class="callout">
         <strong>实现状态更新</strong>
-        <code>PU-weighted BCE</code> 已作为默认关闭的实验开关实现并推送；远程已排队 <code>solo5_pu_weighted</code>，等待当前 30 epoch 阈值校准实验结束后自动运行。30 epoch 阈值校准实验已完成前三折，当前三折均值为 AUC 0.92848、AUPR 0.92466、ACC 0.85378、MCC 0.70798。
+        <code>PU-weighted BCE</code> 已作为默认关闭的实验开关实现并推送；远程 <code>solo5_pu_weighted</code> 已在 30 epoch 主实验结束后启动。30 epoch 阈值校准五折验证已完成，最终均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201。
       </div>
     </section>
 
@@ -217,8 +217,8 @@
         <tbody>
           <tr><td>Fold-local base</td><td>5</td><td>0.91102</td><td>0.90658</td><td>0.82887</td><td>0.66108</td><td>当前对照。</td></tr>
           <tr><td>D4 similarity negative weighting</td><td>5</td><td>0.91138</td><td>0.90698</td><td>0.82806</td><td>0.66116</td><td>提升太小，不建议作为主线。</td></tr>
-          <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td><span class="good">当前最稳信号</span>，正在等待 30 epoch 验证。</td></tr>
-          <tr><td>Fold-local threshold calibration</td><td>30, 前三折</td><td>0.92848</td><td>0.92466</td><td>0.85378</td><td>0.70798</td><td><span class="good">长训确认中</span>，前三折显著高于 5 epoch 筛选结果。</td></tr>
+          <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td>短训筛选中全指标提升。</td></tr>
+          <tr><td>Fold-local threshold calibration</td><td>30</td><td>0.93023</td><td>0.92643</td><td>0.85587</td><td>0.71201</td><td><span class="good">当前最稳主线</span>，五折长训完成，ACC/MCC 提升最明确。</td></tr>
         </tbody>
       </table>
     </section>
