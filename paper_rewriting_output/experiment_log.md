@@ -187,3 +187,9 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_reliable
 ```
 
 Purpose: test whether filtering only the highest-risk unlabeled negatives is more effective than the failed PU-style global BCE weighting.
+
+Remote queue status:
+
+- Queued after active graph-prior PID `721883` finishes, to avoid GPU contention.
+- Queue wrapper PID: `842959`.
+- Log: `/data/ccc/ADR/logs/solo5_reliable_neg_p90_20260624_151900.log`.

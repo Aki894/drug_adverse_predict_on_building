@@ -112,3 +112,5 @@ Planned first screen:
 ```bash
 python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_reliable_neg_p90 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_reliable_negative_filter --reliable_negative_filter_percentile 90
 ```
+
+Remote status: queued on `server-NER` behind the active graph-prior run to avoid resource contention. Queue wrapper PID is `842959`; log is `/data/ccc/ADR/logs/solo5_reliable_neg_p90_20260624_151900.log`.
