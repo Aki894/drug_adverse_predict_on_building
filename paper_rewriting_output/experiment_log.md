@@ -87,6 +87,7 @@ Status: running on `server-NER`.
 - Remote output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_121030_e30_base_quiet_u/results.txt`
 - Fold 1: AUC 0.92779, AUPR 0.92238, ACC 0.85435, MCC 0.70882, threshold 0.500.
 - Fold 2: AUC 0.93009, AUPR 0.92735, ACC 0.85873, MCC 0.71754, threshold 0.500.
-- Two-fold mean: AUC 0.92894, AUPR 0.92487, ACC 0.85654, MCC 0.71318.
+- Fold 3: AUC 0.93056, AUPR 0.92596, ACC 0.85649, MCC 0.71329, threshold 0.500.
+- Three-fold mean: AUC 0.92948, AUPR 0.92523, ACC 0.85652, MCC 0.71322.
 
-Interim interpretation: the first two base folds are slightly above the corresponding calibrated-threshold folds on ACC/MCC. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds.
+Interim interpretation: the first three base folds are slightly above the corresponding calibrated-threshold folds on ACC/MCC. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds. If the five-fold base remains comparable or better, move the main experimental effort toward support-aware ADR weighting, side-aware pseudo-negative risk, or a fold-local graph-propagation prior that can affect ranking metrics as well as decision metrics.

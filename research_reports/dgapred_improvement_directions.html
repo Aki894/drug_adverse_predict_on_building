@@ -152,12 +152,12 @@
   <article class="paper">
     <header>
       <h1>DGAPred 指标提升方向调研报告</h1>
-      <div class="meta">生成时间：2026-06-24 18:37 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：找到可在当前 DGAPred 代码上实现、可验证提升 AUC/AUPR/ACC/MCC 的方向</div>
+      <div class="meta">生成时间：2026-06-24 21:04 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：找到可在当前 DGAPred 代码上实现、可验证提升 AUC/AUPR/ACC/MCC 的方向</div>
     </header>
 
     <section>
       <h2>一、执行摘要</h2>
-      <p>当前 DGAPred 项目的主要问题不是“模型不够复杂”，而是标签矩阵稀疏、未观测 0 被当成负样本、ADR 低支持严重、不同相似性矩阵分布不一致，以及固定 0.5 阈值不适合 MCC/ACC。已有 5 epoch 远程实验显示，<span class="good">fold-local 阈值校准</span>是当前最稳的短期增益来源；D4 相似性负采样仅带来很小 AUC/AUPR 提升，暂不适合作为主贡献。</p>
+      <p>当前 DGAPred 项目的主要问题不是“模型不够复杂”，而是标签矩阵稀疏、未观测 0 被当成负样本、ADR 低支持严重、不同相似性矩阵分布不一致，以及固定 0.5 阈值对 MCC/ACC 不一定最优。已有远程实验显示，<span class="good">fold-local 阈值校准</span>在 5 epoch 中稳定提升，并完成了 30 epoch 五折候选验证；但同配置未校准 30 epoch base 仍在运行，前三折 base 的 ACC/MCC 已略高于校准版前三折，因此不能提前把阈值校准定为最终主贡献。</p>
       <div class="summary-grid">
         <div class="tile"><strong>23,395</strong><span>当前标签矩阵正样本数</span></div>
         <div class="tile"><strong>438,212</strong><span>未观测 0，实际并非严格真负</span></div>
@@ -165,11 +165,11 @@
       </div>
       <div class="callout">
         <strong>推荐下一轮主线</strong>
-        以 <code>fold-local threshold calibration</code> 作为当前主线；<code>PU-weighted BCE</code> 已完成初筛但低于阈值校准，不建议继续作为主贡献。下一步优先补齐 30 epoch 未校准 base 对照，再考虑 <code>低支持感知采样</code> 或更保守的 side-aware 风险建模。
+        先等待 <code>e30_base_quiet_u</code> 完成五折，严格判断阈值校准是否真的优于同 epoch base；在等待期间，下一轮调研和实现应转向更可能改变排序指标的结构性方向：<code>低支持感知采样/损失</code>、<code>side-aware 伪负风险</code>、以及 <code>fold-local 图传播先验</code>。
       </div>
       <div class="callout">
         <strong>实现状态更新</strong>
-        <code>PU-weighted BCE</code> 五折初筛已完成，均值为 AUC 0.91042、AUPR 0.90573、ACC 0.83285、MCC 0.66598，低于 5 epoch 阈值校准结果；30 epoch 阈值校准五折验证已完成，最终均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201。远程已启动 <code>e30_base_quiet_u</code> 作为同配置未校准 base 对照。
+        <code>PU-weighted BCE</code> 五折初筛已完成，均值为 AUC 0.91042、AUPR 0.90573、ACC 0.83285、MCC 0.66598，低于 5 epoch 阈值校准结果；30 epoch 阈值校准五折验证已完成，最终均值为 AUC 0.93023、AUPR 0.92643、ACC 0.85587、MCC 0.71201。远程同配置未校准 base 对照 <code>e30_base_quiet_u</code> 当前完成 3/5 折，三折均值为 AUC 0.92948、AUPR 0.92523、ACC 0.85652、MCC 0.71322。
       </div>
     </section>
 
@@ -219,7 +219,8 @@
           <tr><td>D4 similarity negative weighting</td><td>5</td><td>0.91138</td><td>0.90698</td><td>0.82806</td><td>0.66116</td><td>提升太小，不建议作为主线。</td></tr>
           <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td>短训筛选中全指标提升。</td></tr>
           <tr><td>PU-weighted BCE + threshold calibration</td><td>5</td><td>0.91042</td><td>0.90573</td><td>0.83285</td><td>0.66598</td><td>低于阈值校准短训结果，作为负向消融保留。</td></tr>
-          <tr><td>Fold-local threshold calibration</td><td>30</td><td>0.93023</td><td>0.92643</td><td>0.85587</td><td>0.71201</td><td><span class="good">当前最稳主线</span>，五折长训完成，ACC/MCC 提升最明确。</td></tr>
+          <tr><td>Fold-local threshold calibration</td><td>30</td><td>0.93023</td><td>0.92643</td><td>0.85587</td><td>0.71201</td><td>五折长训完成；需等待同配置 30 epoch base 完成后才能定性。</td></tr>
+          <tr><td>Fold-local base comparator</td><td>30</td><td>0.92948</td><td>0.92523</td><td>0.85652</td><td>0.71322</td><td><span class="warn">运行中，当前 3/5 折</span>；ACC/MCC 暂高于校准版前三折，不可提前下结论。</td></tr>
         </tbody>
       </table>
     </section>
@@ -266,11 +267,11 @@
         <tbody>
           <tr>
             <td><span class="rank">1</span></td>
-            <td><strong>PU-weighted BCE / nnPU 风格训练损失</strong></td>
-            <td>0 标签不是可靠真负；当前 BCE 对正负同等信任。</td>
-            <td>为负样本引入可靠度权重 <code>w_neg = 1 - risk</code>；或按正类先验估计 PU risk。先做保守版本：只在 BCE 中对负样本加权，不改变测试集。</td>
-            <td><span class="good">可能提升 AUC/AUPR</span>，比单纯采样更连续、更稳定。</td>
-            <td>权重过低会降低区分硬负样本能力；需要 ablation。</td>
+            <td><strong>低支持感知采样 / loss reweighting</strong></td>
+            <td>ADR 单例/低支持样本多，训练中难以稳定学习。</td>
+            <td>按 ADR 支持度分桶，对低支持 ADR 的正样本适度加权；对低支持 ADR 下的未观测负样本降低置信，并报告低支持切片指标。</td>
+            <td><span class="good">最贴合当前数据问题</span>，可能改善低支持区域召回和 AUPR。</td>
+            <td>过度加权会牺牲高支持 ADR 的总体 ACC，需要小权重网格。</td>
           </tr>
           <tr>
             <td><span class="rank">2</span></td>
@@ -282,11 +283,11 @@
           </tr>
           <tr>
             <td><span class="rank">3</span></td>
-            <td><strong>低支持感知采样 / loss reweighting</strong></td>
-            <td>ADR 单例/低支持样本多，训练中难以稳定学习。</td>
-            <td>按 drug/ADR 支持度给正样本和负样本分桶；对低支持 ADR 的正样本适度加权，对其负样本降低置信。</td>
-            <td>可能提升低支持区域召回和 AUPR；与阈值校准互补。</td>
-            <td>过度加权会牺牲高支持 ADR 的总体 ACC。</td>
+            <td><strong>轻量 label propagation / prior score 融合</strong></td>
+            <td>当前模型 pair-wise 训练，未显式利用全局相似图传播。</td>
+            <td>严格 fold-local 地计算 drug/ADR 相似图上的传播先验，例如相似 drug 对 ADR 的 max/mean positive score，再作为额外输入或 logit residual。</td>
+            <td>可能直接提升冷门 ADR 和稀疏区域排序。</td>
+            <td>必须只用训练 fold 的正样本构建传播先验。</td>
           </tr>
           <tr>
             <td><span class="rank">4</span></td>
@@ -298,11 +299,11 @@
           </tr>
           <tr>
             <td><span class="rank">5</span></td>
-            <td><strong>轻量 label propagation / prior score 融合</strong></td>
-            <td>当前模型 pair-wise 训练，未显式利用全局相似图传播。</td>
-            <td>离线计算 drug/ADR 相似图上的传播先验，例如相似 drug 对 ADR 的 max/mean positive score，再作为额外输入或 logit residual。</td>
-            <td>可能直接提升冷门 ADR 和稀疏区域排序。</td>
-            <td>要严格 fold-local，不能用测试正样本泄漏进训练先验。</td>
+            <td><strong>PU-weighted BCE / nnPU 风格训练损失</strong></td>
+            <td>0 标签不是可靠真负；当前 BCE 对正负同等信任。</td>
+            <td>已有保守实现初筛失败。若继续，应改成 support-aware 或 side-aware 风险，而不是复用当前全局负权重。</td>
+            <td>单独作为主线的优先级下降。</td>
+            <td>当前结果低于阈值校准短训，容易成为负向消融。</td>
           </tr>
           <tr>
             <td><span class="rank">6</span></td>
@@ -318,11 +319,11 @@
 
     <section>
       <h2>六、推荐实验路线</h2>
-      <h3>路线 A：最快验证 AUC/AUPR 提升</h3>
+      <h3>路线 A：先完成强对照</h3>
       <ol>
-        <li>实现 <code>--use_pu_negative_weighting</code>，在 BCE 上对负样本使用 fold-local risk 权重。</li>
-        <li>先跑 5 epoch，对比 base、D4 sampling、PU-weighted BCE、PU-weighted BCE + calibrated threshold。</li>
-        <li>如果 AUC/AUPR 至少提升 0.002 且 ACC/MCC 不下降，再跑 30 epoch。</li>
+        <li>等待 <code>e30_base_quiet_u</code> 完成 5/5 折。</li>
+        <li>用同 epoch、同 batch/thread/pin-memory 设置比较 base 与 threshold calibration。</li>
+        <li>若校准没有赢，则把它降为后处理消融，不作为论文主贡献。</li>
       </ol>
 
       <h3>路线 B：针对 ADR 低支持问题</h3>
@@ -332,11 +333,11 @@
         <li>报告总体指标和低支持 ADR 子集指标，形成论文分析亮点。</li>
       </ol>
 
-      <h3>路线 C：特征稳健性与视图质量</h3>
+      <h3>路线 C：fold-local 图传播先验</h3>
       <ol>
-        <li>加入 <code>--normalize_similarity_views</code>，统一 GE/RDKit/DGen/MESH/GDA 分布。</li>
-        <li>加入 <code>--view_dropout</code> 或 learned view gate，做视图消融。</li>
-        <li>若整体指标提升不大，也可作为解释性/稳健性补充实验。</li>
+        <li>用训练 fold 的 drug-side 正样本和 drug/side 相似矩阵计算传播先验。</li>
+        <li>将先验作为额外 pair feature 或 logit residual，并保留 <code>--use_graph_prior</code> 开关。</li>
+        <li>优先做 5 epoch 筛选；若 AUC/AUPR 有稳定提升，再跑 30 epoch。</li>
       </ol>
     </section>
 
@@ -344,9 +345,9 @@
       <h2>七、下一步最建议立即实现的改动</h2>
       <div class="cards">
         <div class="card">
-          <h3>1. PU-weighted BCE</h3>
-          <p>把当前风险评分从“采样概率”改为“负样本 loss 权重”。这比删除/少采样更平滑，能保留困难负样本但降低可疑负样本的破坏性。</p>
-          <div class="note"><span class="tag">主攻 AUC/AUPR</span><span class="tag">训练集内完成</span></div>
+          <h3>1. Support-aware loss</h3>
+          <p>围绕低支持 ADR 做正样本轻加权和未观测负样本降置信，并输出分支持度切片指标。这个方向最贴近当前数据分布，而不是只做概率后处理。</p>
+          <div class="note"><span class="tag">主攻 AUPR</span><span class="tag">论文分析友好</span></div>
         </div>
         <div class="card">
           <h3>2. side-aware risk</h3>
@@ -354,9 +355,9 @@
           <div class="note"><span class="tag">主攻 AUPR</span><span class="tag">利用现有 side matrices</span></div>
         </div>
         <div class="card">
-          <h3>3. support-aware analysis</h3>
-          <p>把低支持 ADR 作为单独评价切片。即使总体提升小，也能形成更有说服力的论文结果分析。</p>
-          <div class="note"><span class="tag">论文友好</span><span class="tag">可解释性强</span></div>
+          <h3>3. graph prior</h3>
+          <p>用相似 drug 和相似 ADR 的训练折正样本传播一个 fold-local 先验分数，再与 DGAPred logit 融合，优先观察排序指标是否提升。</p>
+          <div class="note"><span class="tag">主攻 AUC/AUPR</span><span class="tag">严格 fold-local</span></div>
         </div>
       </div>
     </section>
