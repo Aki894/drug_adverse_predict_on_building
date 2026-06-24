@@ -9,7 +9,7 @@
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
 | PU-style negative BCE + threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_115459_solo5_pu_weighted_fixed/results.txt` | 5 | 0.91042 | 0.90573 | 0.83285 | 0.66598 | Negative ablation: below calibrated-threshold screen, so do not promote as the main direction. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.93023 | 0.92643 | 0.85587 | 0.71201 | Completed five-fold long-training candidate. Must be compared against the same-epoch base before being promoted. |
-| Fold-local base comparator | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_121030_e30_base_quiet_u/results.txt` | 30 | 0.92890 | 0.92506 | 0.85489 | 0.70990 | Running; current 4/5-fold mean. Very close to calibrated threshold; wait for fold 5 before final claim. |
+| Fold-local base comparator | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_121030_e30_base_quiet_u/results.txt` | 30 | 0.92965 | 0.92597 | 0.85550 | 0.71140 | Completed five-fold same-epoch comparator. Calibrated threshold is only slightly higher: +0.00058 AUC, +0.00046 AUPR, +0.00037 ACC, +0.00061 MCC. |
 
 ## Fold-Level Calibrated Thresholds
 
@@ -28,7 +28,7 @@
 
 ## Next Validation Gate
 
-Use the completed 30-epoch calibrated-threshold five-fold run as provisional evidence, then compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Remote run `e30_base_quiet_u` is in progress. Its first four folds average AUC 0.92890, AUPR 0.92506, ACC 0.85489, and MCC 0.70990. The corresponding calibrated-threshold first-four-fold mean is approximately AUC 0.92931, AUPR 0.92516, ACC 0.85521, and MCC 0.71073, so the two settings are extremely close; wait for all five folds before making the final claim.
+The 30-epoch calibrated-threshold run is a real but very small improvement over the same-epoch fold-local base: AUC +0.00058, AUPR +0.00046, ACC +0.00037, and MCC +0.00061. Treat it as a useful decision-layer component, not a sufficient standalone paper contribution. Continue with support-aware ADR weighting and graph/side-risk directions to seek a stronger ranking-metric contribution.
 
 ## 30-Epoch Fold-Local Base Comparator Progress
 
@@ -38,8 +38,9 @@ Use the completed 30-epoch calibrated-threshold five-fold run as provisional evi
 | 2 | 0.93009 | 0.92735 | 0.85873 | 0.71754 | 0.500 |
 | 3 | 0.93056 | 0.92596 | 0.85649 | 0.71329 | 0.500 |
 | 4 | 0.92714 | 0.92456 | 0.84997 | 0.69996 | 0.500 |
+| 5 | 0.93268 | 0.92958 | 0.85798 | 0.71741 | 0.500 |
 
-Current four-fold mean: AUC 0.92890, AUPR 0.92506, ACC 0.85489, MCC 0.70990.
+Final five-fold mean: AUC 0.92965, AUPR 0.92597, ACC 0.85550, MCC 0.71140.
 
 ## 30-Epoch Calibrated Threshold Progress
 

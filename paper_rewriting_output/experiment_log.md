@@ -89,9 +89,10 @@ Status: running on `server-NER`.
 - Fold 2: AUC 0.93009, AUPR 0.92735, ACC 0.85873, MCC 0.71754, threshold 0.500.
 - Fold 3: AUC 0.93056, AUPR 0.92596, ACC 0.85649, MCC 0.71329, threshold 0.500.
 - Fold 4: AUC 0.92714, AUPR 0.92456, ACC 0.84997, MCC 0.69996, threshold 0.500.
-- Four-fold mean: AUC 0.92890, AUPR 0.92506, ACC 0.85489, MCC 0.70990.
+- Fold 5: AUC 0.93268, AUPR 0.92958, ACC 0.85798, MCC 0.71741, threshold 0.500.
+- Five-fold mean: AUC 0.92965, AUPR 0.92597, ACC 0.85550, MCC 0.71140.
 
-Interim interpretation: the first four base folds are extremely close to the corresponding calibrated-threshold folds, with calibrated threshold now slightly higher on all four means. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds. If the five-fold base remains comparable or better, move the main experimental effort toward support-aware ADR weighting, side-aware pseudo-negative risk, or a fold-local graph-propagation prior that can affect ranking metrics as well as decision metrics.
+Interpretation: compared with the completed 30-epoch calibrated-threshold run (AUC 0.93023, AUPR 0.92643, ACC 0.85587, MCC 0.71201), calibrated threshold is only slightly higher: +0.00058 AUC, +0.00046 AUPR, +0.00037 ACC, and +0.00061 MCC. Keep it as a useful decision-layer component, but continue searching for a stronger method-level contribution that improves ranking metrics.
 
 ### Support-Aware ADR Weighting
 
@@ -105,4 +106,10 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_support_
 
 Purpose: test whether fold-local ADR support statistics improve sparse-ADR learning. Low-support ADR positives receive a conservative BCE weight boost; unobserved negatives under low- or zero-support ADRs receive a conservative confidence discount. The default parameters are intentionally mild: `support_threshold=5`, `support_positive_boost=0.25`, `support_negative_discount=0.15`, and `support_negative_min_weight=0.3`.
 
-Validation status: syntax check passed locally with `PYTHONPYCACHEPREFIX=/tmp/dgapred_pycache python3 -m py_compile pythonPredict/DGAPred\(Compare\)/src/main.py`. Remote run should wait until the 30-epoch base comparator finishes or be launched only if spare GPU capacity is available.
+Validation status: syntax check passed locally with `PYTHONPYCACHEPREFIX=/tmp/dgapred_pycache python3 -m py_compile pythonPredict/DGAPred\(Compare\)/src/main.py`. Remote screen `solo5_support_weighted` started after the base comparator finished.
+
+Remote run:
+
+- Log: `/data/ccc/ADR/logs/solo5_support_weighted_20260624_133132.log`
+- Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_133135_solo5_support_weighted/`
+- Fold 1 startup weight diagnostics: low-support ADR count 508, zero-support negative samples 913, mean weights all/positive/negative 0.9764/1.0060/0.9469.
