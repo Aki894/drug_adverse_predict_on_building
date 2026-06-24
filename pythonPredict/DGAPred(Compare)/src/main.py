@@ -93,6 +93,81 @@ def compute_d4_negative_risks(negative_samples, DAL, drug_sim):
     return np.clip(np.nan_to_num(risks, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
 
 
+def build_d4_side_similarity(side_features):
+    """融合ADR多源相似性矩阵，用于估计未观察负样本的ADR侧伪负风险。"""
+    normalized_sims = []
+    for sim in side_features:
+        sim = np.nan_to_num(np.asarray(sim, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        sim_min, sim_max = float(sim.min()), float(sim.max())
+        if sim_min < 0.0 or sim_max > 1.0:
+            sim = (sim - sim_min) / (sim_max - sim_min + 1e-12)
+        normalized_sims.append(np.clip(sim, 0.0, 1.0))
+    return np.mean(normalized_sims, axis=0)
+
+
+def compute_d4_side_negative_risks(negative_samples, DAL, side_sim):
+    """计算未观察负样本靠近同drug阳性ADR的程度。"""
+    negative_samples = np.asarray(negative_samples)
+    drug_ids = negative_samples[:, 0].astype(int)
+    side_ids = negative_samples[:, 1].astype(int)
+    risks = np.zeros(len(negative_samples), dtype=np.float32)
+
+    for drug_idx in np.unique(drug_ids):
+        positive_sides = np.flatnonzero(DAL[drug_idx, :] > 0)
+        if len(positive_sides) == 0:
+            continue
+        sample_idx = np.flatnonzero(drug_ids == drug_idx)
+        risks[sample_idx] = side_sim[side_ids[sample_idx]][:, positive_sides].max(axis=1)
+
+    return np.clip(np.nan_to_num(risks, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+
+
+def compute_d4_combined_negative_risks(negative_samples, DAL, drug_features, side_features=None):
+    """融合drug侧和ADR侧相似邻居证据，估计负样本伪负风险。"""
+    drug_sim = build_d4_drug_similarity(drug_features)
+    drug_risks = compute_d4_negative_risks(negative_samples, DAL, drug_sim)
+
+    if side_features is None:
+        return drug_risks
+
+    side_sim = build_d4_side_similarity(side_features)
+    side_risks = compute_d4_side_negative_risks(negative_samples, DAL, side_sim)
+    combined = np.maximum(drug_risks, side_risks)
+    return np.clip(np.nan_to_num(combined, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+
+
+def attach_pu_negative_weights(fold_train, DAL, drug_features, side_features, args):
+    """为训练样本附加PU风格置信权重；正样本为1，疑似伪负样本降权。"""
+    fold_train = np.asarray(fold_train)
+    if not args.use_pu_negative_weighting:
+        return fold_train
+
+    weights = np.ones(len(fold_train), dtype=np.float32)
+    negative_mask = fold_train[:, 2] <= 0
+    if negative_mask.any():
+        negative_samples = fold_train[negative_mask, :3]
+        if args.pu_use_side_risk:
+            risks = compute_d4_combined_negative_risks(
+                negative_samples, DAL, drug_features, side_features=side_features
+            )
+        else:
+            drug_sim = build_d4_drug_similarity(drug_features)
+            risks = compute_d4_negative_risks(negative_samples, DAL, drug_sim)
+
+        neg_weights = 1.0 - args.pu_negative_risk_scale * risks
+        neg_weights = np.clip(neg_weights, args.pu_negative_min_weight, 1.0)
+        weights[negative_mask] = neg_weights.astype(np.float32)
+
+        args.pu_negative_count = int(negative_mask.sum())
+        args.pu_negative_risk_mean = float(risks.mean())
+        args.pu_negative_weight_mean = float(neg_weights.mean())
+        print("[PU] negative BCE weighting enabled")
+        print(f"[PU] negative count: {args.pu_negative_count}")
+        print(f"[PU] risk mean: {args.pu_negative_risk_mean:.4f}, weight mean: {args.pu_negative_weight_mean:.4f}")
+
+    return np.column_stack((fold_train[:, :3], weights))
+
+
 def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, args):
     """从候选负样本池中抽样，对高假阴性风险负样本降权但不直接删除。"""
     if not args.use_d4_similarity_negative_weighting:
@@ -443,7 +518,8 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     train_indices = (
         data_train[:, 0].astype(int),  # drug_indices
         data_train[:, 1].astype(int),  # side_indices
-        data_train[:, 2]               # labels
+        data_train[:, 2],              # labels
+        data_train[:, 3] if data_train.shape[1] > 3 else np.ones(len(data_train), dtype=np.float32)
     )
     
     test_indices = (
@@ -456,7 +532,8 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     trainset = torch.utils.data.TensorDataset(
         torch.LongTensor(train_indices[0]),  # drug_indices
         torch.LongTensor(train_indices[1]),  # side_indices
-        torch.FloatTensor(train_indices[2])  # labels
+        torch.FloatTensor(train_indices[2]), # labels
+        torch.FloatTensor(train_indices[3])  # sample weights
     )
     testset = torch.utils.data.TensorDataset(
         torch.LongTensor(test_indices[0]),
@@ -508,7 +585,7 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     
     '''构建损失函数和优化器'''
     Regression_criterion = nn.MSELoss()
-    Classification_criterion = nn.BCEWithLogitsLoss()
+    Classification_criterion = nn.BCEWithLogitsLoss(reduction='none')
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
     '''构建学习率调度器'''
@@ -668,7 +745,12 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
         desc="Training",
         disable=args.disable_tqdm if args is not None else False
     )
-    for step, (drug_idx, side_idx, ratings) in pbar:
+    for step, batch in pbar:
+        if len(batch) == 4:
+            drug_idx, side_idx, ratings, sample_weights = batch
+        else:
+            drug_idx, side_idx, ratings = batch
+            sample_weights = torch.ones_like(ratings)
         
         # 构建二分类标签
         labels = (ratings > 0).float()
@@ -702,7 +784,8 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
             y_target = labels
         
         # 计算损失
-        loss1 = lossfunction1(logits, y_target.to(device))
+        cls_loss = lossfunction1(logits, y_target.to(device))
+        loss1 = (cls_loss * sample_weights.to(device)).mean()
         if len(one_label_index[0]) > 0:
             loss2 = lossfunction2(reconstruction[one_label_index], ratings[one_label_index].to(device))
         else:
@@ -779,7 +862,7 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
         one_label_index = np.nonzero(labels.data.numpy())
         
         # 计算损失
-        loss1 = lossfunction1(scores_one, labels.to(device))#BCEWithLogitsLoss内部会做sigmoid
+        loss1 = lossfunction1(scores_one, labels.to(device)).mean()#BCEWithLogitsLoss内部会做sigmoid
         if len(one_label_index[0]) > 0:
             loss2 = lossfunction2(scores_two[one_label_index], ratings[one_label_index].to(device))#在正样本上计算MSELoss
         else:
@@ -898,6 +981,14 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='阈值搜索上界')
     parser.add_argument('--threshold_steps', type=int, default=81,
                         metavar='N', help='阈值搜索网格数量')
+    parser.add_argument('--use_pu_negative_weighting', action='store_true',
+                        help='启用PU风格负样本BCE置信降权')
+    parser.add_argument('--pu_negative_min_weight', type=float, default=0.2,
+                        metavar='FLOAT', help='疑似伪负样本最低BCE权重')
+    parser.add_argument('--pu_negative_risk_scale', type=float, default=0.8,
+                        metavar='FLOAT', help='伪负风险映射到负样本降权的强度')
+    parser.add_argument('--pu_use_side_risk', action=argparse.BooleanOptionalAction, default=True,
+                        help='PU负样本风险同时使用ADR相似性证据')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
@@ -954,6 +1045,13 @@ if __name__ == '__main__':
             all_negative_candidates=all_negative_candidates,
             DAL=drug_side.values,
             drug_features=drug_feature,
+            args=args
+        )
+        fold_train_data = attach_pu_negative_weights(
+            fold_train=fold_train_data,
+            DAL=drug_side.values,
+            drug_features=drug_feature,
+            side_features=side_feature,
             args=args
         )
         auc, PR_auc, rmse, mae, acc, mcc = train_test(drug_feature,side_feature,fold_train_data.tolist(), data[test_split].tolist(),fold,args,remain_drug_list,adr_list,output_dir)
