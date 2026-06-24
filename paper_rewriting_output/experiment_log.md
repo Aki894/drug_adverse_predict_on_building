@@ -91,3 +91,17 @@ Status: running on `server-NER`.
 - Three-fold mean: AUC 0.92948, AUPR 0.92523, ACC 0.85652, MCC 0.71322.
 
 Interim interpretation: the first three base folds are slightly above the corresponding calibrated-threshold folds on ACC/MCC. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds. If the five-fold base remains comparable or better, move the main experimental effort toward support-aware ADR weighting, side-aware pseudo-negative risk, or a fold-local graph-propagation prior that can affect ranking metrics as well as decision metrics.
+
+### Support-Aware ADR Weighting
+
+Implementation status: locally implemented as a switchable follow-up in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+Planned 5-epoch screening command:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_support_weighted --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_support_aware_weighting
+```
+
+Purpose: test whether fold-local ADR support statistics improve sparse-ADR learning. Low-support ADR positives receive a conservative BCE weight boost; unobserved negatives under low- or zero-support ADRs receive a conservative confidence discount. The default parameters are intentionally mild: `support_threshold=5`, `support_positive_boost=0.25`, `support_negative_discount=0.15`, and `support_negative_min_weight=0.3`.
+
+Validation status: syntax check passed locally with `PYTHONPYCACHEPREFIX=/tmp/dgapred_pycache python3 -m py_compile pythonPredict/DGAPred\(Compare\)/src/main.py`. Remote run should wait until the 30-epoch base comparator finishes or be launched only if spare GPU capacity is available.

@@ -168,6 +168,59 @@ def attach_pu_negative_weights(fold_train, DAL, drug_features, side_features, ar
     return np.column_stack((fold_train[:, :3], weights))
 
 
+def attach_support_aware_weights(fold_train, args):
+    """按当前fold内ADR支持度调整BCE样本权重，缓解低支持ADR学习不足。"""
+    fold_train = np.asarray(fold_train)
+    if not args.use_support_aware_weighting:
+        return fold_train
+
+    base_weights = (
+        fold_train[:, 3].astype(np.float32)
+        if fold_train.shape[1] > 3
+        else np.ones(len(fold_train), dtype=np.float32)
+    )
+    labels = fold_train[:, 2] > 0
+    side_ids = fold_train[:, 1].astype(int)
+    n_sides = int(side_ids.max()) + 1 if len(side_ids) > 0 else 0
+    side_positive_support = np.bincount(side_ids[labels], minlength=n_sides).astype(np.float32)
+
+    support_threshold = max(1.0, float(args.support_threshold))
+    sample_support = side_positive_support[side_ids]
+    scarcity = np.clip((support_threshold - sample_support) / support_threshold, 0.0, 1.0)
+
+    factors = np.ones(len(fold_train), dtype=np.float32)
+    factors[labels] = 1.0 + float(args.support_positive_boost) * scarcity[labels]
+    negative_mask = ~labels
+    factors[negative_mask] = 1.0 - float(args.support_negative_discount) * scarcity[negative_mask]
+
+    weights = base_weights * factors
+    weights[negative_mask] = np.clip(
+        weights[negative_mask],
+        float(args.support_negative_min_weight),
+        None
+    )
+
+    low_support_side_count = int(np.sum((side_positive_support > 0) & (side_positive_support <= support_threshold)))
+    zero_support_negative_count = int(np.sum(negative_mask & (sample_support <= 0)))
+    args.support_low_side_count = low_support_side_count
+    args.support_zero_support_negative_count = zero_support_negative_count
+    args.support_weight_mean = float(weights.mean())
+    args.support_positive_weight_mean = float(weights[labels].mean()) if labels.any() else 0.0
+    args.support_negative_weight_mean = float(weights[negative_mask].mean()) if negative_mask.any() else 0.0
+
+    print("[Support] support-aware BCE weighting enabled")
+    print(f"[Support] threshold: {support_threshold:.0f}, low-support ADR count: {low_support_side_count}")
+    print(f"[Support] zero-support negative samples: {zero_support_negative_count}")
+    print(
+        "[Support] weight mean all/pos/neg: "
+        f"{args.support_weight_mean:.4f} / "
+        f"{args.support_positive_weight_mean:.4f} / "
+        f"{args.support_negative_weight_mean:.4f}"
+    )
+
+    return np.column_stack((fold_train[:, :3], weights.astype(np.float32)))
+
+
 def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, args):
     """从候选负样本池中抽样，对高假阴性风险负样本降权但不直接删除。"""
     if not args.use_d4_similarity_negative_weighting:
@@ -993,6 +1046,16 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='伪负风险映射到负样本降权的强度')
     parser.add_argument('--pu_use_side_risk', action=argparse.BooleanOptionalAction, default=True,
                         help='PU负样本风险同时使用ADR相似性证据')
+    parser.add_argument('--use_support_aware_weighting', action='store_true',
+                        help='启用fold-local ADR支持度感知BCE样本权重')
+    parser.add_argument('--support_threshold', type=int, default=5,
+                        metavar='N', help='低支持ADR正样本数阈值')
+    parser.add_argument('--support_positive_boost', type=float, default=0.25,
+                        metavar='FLOAT', help='低支持ADR正样本最大额外权重')
+    parser.add_argument('--support_negative_discount', type=float, default=0.15,
+                        metavar='FLOAT', help='低支持ADR未观测负样本最大降权比例')
+    parser.add_argument('--support_negative_min_weight', type=float, default=0.3,
+                        metavar='FLOAT', help='低支持ADR未观测负样本最低BCE权重')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
@@ -1056,6 +1119,10 @@ if __name__ == '__main__':
             DAL=drug_side.values,
             drug_features=drug_feature,
             side_features=side_feature,
+            args=args
+        )
+        fold_train_data = attach_support_aware_weights(
+            fold_train=fold_train_data,
             args=args
         )
         auc, PR_auc, rmse, mae, acc, mcc = train_test(drug_feature,side_feature,fold_train_data.tolist(), data[test_split].tolist(),fold,args,remain_drug_list,adr_list,output_dir)
