@@ -783,6 +783,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--similarity_path', type=str, default='pythonPredict/',
                         metavar='STRING', help='similarity matrices path')
+    parser.add_argument('--run_name', type=str, default='',
+                        metavar='STRING', help='optional suffix for the output directory')
     # 训练稳健性与正则化
     parser.add_argument('--dropout1', type=float, default=0.4,metavar='FLOAT', help='主特征编码阶段的dropout')
     parser.add_argument('--dropout2', type=float, default=0.2,metavar='FLOAT', help='Final prediction dropout rate')
@@ -853,9 +855,11 @@ if __name__ == '__main__':
     total_auc, total_pr_auc, total_rmse, total_mae = [], [], [], []
     total_acc, total_mcc = [], []
     #建立输出文件夹
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     normalized_rawpath = os.path.normpath(args.rawpath)#规范化路径，解决路径中的冗余和不一致
-    output_dir = os.path.join(normalized_rawpath, f'output_{timestamp}')
+    run_suffix = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in args.run_name.strip())
+    output_name = f'output_{timestamp}' if not run_suffix else f'output_{timestamp}_{run_suffix}'
+    output_dir = os.path.join(normalized_rawpath, output_name)
     os.makedirs(output_dir, exist_ok=True)
     #开始五折交叉验证
     for k, (train_split, test_split) in enumerate(kfold.split(data_x, data_y)):
