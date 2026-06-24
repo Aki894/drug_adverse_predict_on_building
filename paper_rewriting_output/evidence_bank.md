@@ -161,3 +161,9 @@ Full-validation next step: a clean 30-epoch graph-prior run is active on `server
 - PID: `901791`
 - Log: `/data/ccc/ADR/logs/e30_graph_prior_retry_20260624_153914.log`
 - Run name: `e30_graph_prior_retry`
+
+Retry outcome: the run stalled during fold 1 after epoch 3 with GPU utilization at 0% and no log updates, then was terminated. This makes full 30-epoch graph-prior ensemble validation unavailable for now. The evidence status is:
+
+- Fully verified method-level gain: 5-epoch base + graph-prior score ensemble, AUC 0.91368, AUPR 0.90930, ACC 0.83054, MCC 0.66465 over 5 folds.
+- Fully verified 30-epoch decision-layer gain: calibrated threshold, AUC 0.93023, AUPR 0.92643, ACC 0.85587, MCC 0.71201 over 5 folds.
+- Partial 30-epoch ensemble signal: AUC 0.93019, AUPR 0.92598, ACC 0.85695, MCC 0.71393 over 3 folds only.

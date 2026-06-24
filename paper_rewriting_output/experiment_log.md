@@ -263,3 +263,10 @@ Full-validation setup:
 - PID: `901791`.
 - Log: `/data/ccc/ADR/logs/e30_graph_prior_retry_20260624_153914.log`.
 - Run name: `e30_graph_prior_retry`.
+
+Retry status:
+
+- The retry reached fold 1 epoch 3 (AUC 0.90700, AUPR 0.90009, ACC 0.82186, MCC 0.64466), then stopped producing log output while GPU utilization dropped to 0%.
+- Process status at 5:12 elapsed: CPU 42.2%, GPU 0%, log mtime unchanged at `2026-06-24 15:40:50 +0000`.
+- The retry was terminated as another stalled long graph-prior run.
+- Current validated result: 5-epoch score ensemble is fully verified over 5 folds. The 30-epoch ensemble remains partial (3 folds) because both long graph-prior attempts stalled.
