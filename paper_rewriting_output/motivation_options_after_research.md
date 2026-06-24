@@ -1,0 +1,10 @@
+# Motivation Options After Research
+
+| Option | One-Sentence Motivation | Core Innovation | Why It Is Not Overbroad | Required Evidence | Best-Fit Paper Arc |
+|---|---|---|---|---|---|
+| A | Reduce pseudo-negative noise in DGAPred by reliability-aware fold-local negative sampling. | Drug-similarity false-negative risk weighting during train negative sampling. | Only targets sampling; does not claim new clinical labels. | AUC/AUPR gains vs random negatives; risk mean before/after. | Problem: unlabeled zeros -> Method: reliability sampling -> Results: metrics and ablation. |
+| B | Improve DGAPred representation through debiased contrastive learning under false-negative risk. | Debiased InfoNCE plus warmup/scale normalization. | Only addresses auxiliary representation loss. | Gains from standard vs debiased contrastive. | Problem: contrastive false negatives -> Method: DCL -> Results: ablation. |
+| C | Combine multi-view interaction and reliability-aware sampling for ADR prediction. | Feature interaction + ARConv + reliable negatives. | Full-system claim only after ablations. | Full model beats component variants. | Architecture + data-quality story. |
+| D | Improve threshold-dependent ADR decisions by fold-local MCC-oriented probability threshold calibration. | Select the test decision threshold from training-fold predictions after model selection. | It is an evaluation/decision calibration component, not a new ranking model. | ACC/MCC gains without harming AUC/AUPR; fold-wise threshold stability. | Problem: ranking scores do not imply optimal 0.5 decisions -> Method: fold-local calibration -> Results: ACC/MCC ablation. |
+
+Selected working motivation after screening: Option D as the strongest immediate metric-improving component, with Option A kept as a secondary methodological direction. The 5-epoch screen shows D4 similarity negative weighting produces only tiny AUC/AUPR gains and no ACC/MCC improvement, while fold-local threshold calibration improves all four reported means.

@@ -369,6 +369,33 @@ def sparse_multilabel_categorical_crossentropy(y_true=None, y_pred=None, mask_ze
     return neg_loss + pos_loss
 
 
+def compute_binary_metrics_at_threshold(label_truth, pred_scores, threshold):
+    """Compute threshold-dependent binary metrics from probability scores."""
+    y_pred_bin = (pred_scores >= threshold).astype(np.int32)
+    acc = metrics.accuracy_score(label_truth, y_pred_bin)
+    mcc = metrics.matthews_corrcoef(label_truth, y_pred_bin)
+    return acc, mcc
+
+
+def select_calibrated_threshold(label_truth, pred_scores, args):
+    """Select a fold-local decision threshold on training predictions only."""
+    thresholds = np.linspace(args.threshold_min, args.threshold_max, args.threshold_steps)
+    best_threshold = float(args.metric_threshold)
+    best_acc, best_mcc = compute_binary_metrics_at_threshold(label_truth, pred_scores, best_threshold)
+    best_score = best_mcc if args.threshold_metric == 'mcc' else best_acc
+
+    for threshold in thresholds:
+        acc, mcc = compute_binary_metrics_at_threshold(label_truth, pred_scores, threshold)
+        score = mcc if args.threshold_metric == 'mcc' else acc
+        if (score > best_score) or (np.isclose(score, best_score) and abs(threshold - 0.5) < abs(best_threshold - 0.5)):
+            best_threshold = float(threshold)
+            best_acc = float(acc)
+            best_mcc = float(mcc)
+            best_score = float(score)
+
+    return best_threshold, best_acc, best_mcc
+
+
 
 
 # ============================================================================
@@ -520,7 +547,8 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
                                                                                                            global_side_features_tensor,
                                                                                                            lossfunction1=Classification_criterion,
                                                                                                            lossfunction2=Regression_criterion,
-                                                                                                           epoch=epoch)
+                                                                                                           epoch=epoch,
+                                                                                                           threshold=args.metric_threshold)
                                                                                         
         test_epoch = test_iter_loss/test_step
         test_epoches.append(test_epoch)
@@ -553,18 +581,39 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
         print(f"\n[Info] Loaded best model from validation (AUC: {AUC_mn:.5f}, AUPR: {AUPR_mn:.5f})")
+
+    final_threshold = float(args.metric_threshold)
+    if args.use_calibrated_threshold:
+        _, _, _, _, train_acc, train_mcc, _, _, train_ground_truth, train_pred1, _, _, _ = test(
+            model, _train_loader, device, global_drug_features_tensor, global_side_features_tensor,
+            lossfunction1=Classification_criterion,
+            lossfunction2=Regression_criterion,
+            epoch=epoch,
+            threshold=args.metric_threshold
+        )
+        train_labels = (train_ground_truth > 0).astype(np.float32)
+        final_threshold, calibrated_train_acc, calibrated_train_mcc = select_calibrated_threshold(
+            train_labels, train_pred1, args
+        )
+        print(
+            "[Threshold] calibrated on fold training predictions: "
+            f"default={args.metric_threshold:.3f} ACC={train_acc:.5f} MCC={train_mcc:.5f}; "
+            f"selected={final_threshold:.3f} ACC={calibrated_train_acc:.5f} MCC={calibrated_train_mcc:.5f}"
+        )
+
     final_start = time.time()
     i_auc, iPR_auc, rmse, mae, acc, mcc, ground_i, ground_u, ground_truth, pred1, pred2, test_avg_loss, step_ = test(
         model, _test, device, global_drug_features_tensor, global_side_features_tensor,
         lossfunction1=Classification_criterion,
         lossfunction2=Regression_criterion,
-        epoch=epoch
+        epoch=epoch,
+        threshold=final_threshold
     )
     time_cost = time.time() - final_start
     print("Time: %.2f <Test> RMSE: %.5f, MAE: %.5f, AUC: %.5f, AUPR: %.5f, ACC: %.5f, MCC: %.5f " % (
         time_cost, rmse, mae, i_auc, iPR_auc, acc, mcc))
     print('The best AUC/AUPR: %.5f / %.5f' % (i_auc, iPR_auc))
-    print('The best ACC/MCC: %.5f / %.5f' % (acc, mcc))
+    print('The best ACC/MCC: %.5f / %.5f at threshold %.3f' % (acc, mcc, final_threshold))
 
     '''保存最终输出模型以及测试结果数据'''
     with open(os.path.join(output_dir,f'results.txt'),'a+') as f:
@@ -575,7 +624,9 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
                 f.write(f"{arg}: {value}\n")
             f.write(f"D4 contrastive method: {d4_method}\n")
             f.write("===========================\n\n")
-        f.write("Fold %d: AUC: %.5f, AUPR: %.5f, ACC: %.5f, MCC: %.5f\n" % (fold, i_auc, iPR_auc, acc, mcc))
+        f.write("Fold %d: AUC: %.5f, AUPR: %.5f, ACC: %.5f, MCC: %.5f, threshold: %.3f\n" % (
+            fold, i_auc, iPR_auc, acc, mcc, final_threshold
+        ))
     with open(os.path.join(output_dir, f'model_fold{str(fold)}.pkl'), 'wb') as f:
         pickle.dump(model.state_dict(), f)
     print("Model saved to: %s" % os.path.join(output_dir, f'model_fold{str(fold)}.pkl'))
@@ -676,7 +727,7 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
 
     return avg_loss, step
 
-def test(model, test_loader, device, global_drug_features, global_side_features, lossfunction1, lossfunction2, epoch=0):
+def test(model, test_loader, device, global_drug_features, global_side_features, lossfunction1, lossfunction2, epoch=0, threshold=0.5):
     """测试函数 - 带进度条和实时指标"""
     model.eval()
     
@@ -755,10 +806,7 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
     one_label_index = np.nonzero(label_truth)
     rmse = sqrt(mean_squared_error(pred2[one_label_index], ground_truth[one_label_index]))
     mae = mean_absolute_error(pred2[one_label_index], ground_truth[one_label_index])
-    # 依据0.5阈值计算二分类ACC与MCC
-    y_pred_bin = (pred1 >= 0.5).astype(np.int32)
-    acc = metrics.accuracy_score(label_truth, y_pred_bin)
-    mcc = metrics.matthews_corrcoef(label_truth, y_pred_bin)
+    acc, mcc = compute_binary_metrics_at_threshold(label_truth, pred1, threshold)
 
     return i_auc, iPR_auc, rmse, mae, acc, mcc, ground_i, ground_u, ground_truth, pred1, pred2, test_avg_loss, step
 
@@ -821,6 +869,18 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='D4高假阴性风险负样本分位阈值')
     parser.add_argument('--d4_negative_min_weight', type=float, default=0.05,
                         metavar='FLOAT', help='D4高风险负样本最低保留权重')
+    parser.add_argument('--metric_threshold', type=float, default=0.5,
+                        metavar='FLOAT', help='计算ACC/MCC使用的默认概率阈值')
+    parser.add_argument('--use_calibrated_threshold', action='store_true',
+                        help='在每个fold的训练预测上选择阈值，再用于测试ACC/MCC')
+    parser.add_argument('--threshold_metric', type=str, default='mcc',
+                        choices=['mcc', 'acc'], help='阈值校准优化目标')
+    parser.add_argument('--threshold_min', type=float, default=0.1,
+                        metavar='FLOAT', help='阈值搜索下界')
+    parser.add_argument('--threshold_max', type=float, default=0.9,
+                        metavar='FLOAT', help='阈值搜索上界')
+    parser.add_argument('--threshold_steps', type=int, default=81,
+                        metavar='N', help='阈值搜索网格数量')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
