@@ -88,9 +88,10 @@ Status: running on `server-NER`.
 - Fold 1: AUC 0.92779, AUPR 0.92238, ACC 0.85435, MCC 0.70882, threshold 0.500.
 - Fold 2: AUC 0.93009, AUPR 0.92735, ACC 0.85873, MCC 0.71754, threshold 0.500.
 - Fold 3: AUC 0.93056, AUPR 0.92596, ACC 0.85649, MCC 0.71329, threshold 0.500.
-- Three-fold mean: AUC 0.92948, AUPR 0.92523, ACC 0.85652, MCC 0.71322.
+- Fold 4: AUC 0.92714, AUPR 0.92456, ACC 0.84997, MCC 0.69996, threshold 0.500.
+- Four-fold mean: AUC 0.92890, AUPR 0.92506, ACC 0.85489, MCC 0.70990.
 
-Interim interpretation: the first three base folds are slightly above the corresponding calibrated-threshold folds on ACC/MCC. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds. If the five-fold base remains comparable or better, move the main experimental effort toward support-aware ADR weighting, side-aware pseudo-negative risk, or a fold-local graph-propagation prior that can affect ranking metrics as well as decision metrics.
+Interim interpretation: the first four base folds are extremely close to the corresponding calibrated-threshold folds, with calibrated threshold now slightly higher on all four means. Do not finalize threshold calibration as the paper's main contribution until the base comparator completes all five folds. If the five-fold base remains comparable or better, move the main experimental effort toward support-aware ADR weighting, side-aware pseudo-negative risk, or a fold-local graph-propagation prior that can affect ranking metrics as well as decision metrics.
 
 ### Support-Aware ADR Weighting
 
