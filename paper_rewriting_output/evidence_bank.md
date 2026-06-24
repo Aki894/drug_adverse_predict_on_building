@@ -7,6 +7,7 @@
 | Fold-local base | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_084455_solo5_foldlocal_base/results.txt` | 5 | 0.91102 | 0.90658 | 0.82887 | 0.66108 | Baseline after fold-local negative sampling cleanup. |
 | D4 similarity negative weighting | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_090556_solo5_d4_neg_nopin/results.txt` | 5 | 0.91138 | 0.90698 | 0.82806 | 0.66116 | Tiny AUC/AUPR gain, no useful ACC/MCC gain. Not strong enough as the main method. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
+| Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt` | 30 | 0.92769 | 0.92389 | 0.85366 | 0.70778 | In-progress two-fold mean; strong long-training confirmation so far. |
 
 ## Fold-Level Calibrated Thresholds
 
@@ -25,7 +26,16 @@
 
 ## Next Validation Gate
 
-Run the same calibrated-threshold setting for 30 epochs and compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Treat the 5-epoch result as screening evidence only.
+Finish the 30-epoch calibrated-threshold five-fold run and compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. The current two-fold mean is already substantially above the 5-epoch screening result, but the five-fold mean is required before finalizing the claim.
+
+## 30-Epoch Calibrated Threshold Progress
+
+| Fold | AUC | AUPR | ACC | MCC | Selected Threshold |
+|---|---:|---:|---:|---:|---:|
+| 1 | 0.92582 | 0.92032 | 0.85157 | 0.70317 | 0.510 |
+| 2 | 0.92957 | 0.92745 | 0.85574 | 0.71240 | 0.420 |
+
+Current two-fold mean: AUC 0.92769, AUPR 0.92389, ACC 0.85366, MCC 0.70778.
 
 ## Implemented Follow-Up Direction
 
