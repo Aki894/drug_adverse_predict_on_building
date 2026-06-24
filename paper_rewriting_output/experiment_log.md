@@ -47,7 +47,8 @@ Conclusion: strongest current signal. Needs a 30-epoch confirmation run.
 - Remote output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_102434_e30_calibrated_threshold_quiet_u/results.txt`
 - Fold 1: AUC 0.92582, AUPR 0.92032, ACC 0.85157, MCC 0.70317, threshold 0.510.
 - Fold 2: AUC 0.92957, AUPR 0.92745, ACC 0.85574, MCC 0.71240, threshold 0.420.
-- Two-fold mean: AUC 0.92769, AUPR 0.92389, ACC 0.85366, MCC 0.70778.
+- Fold 3: AUC 0.93004, AUPR 0.92620, ACC 0.85403, MCC 0.70837, threshold 0.450.
+- Three-fold mean: AUC 0.92848, AUPR 0.92466, ACC 0.85378, MCC 0.70798.
 
 ### PU-Style Negative BCE Weighting
 
