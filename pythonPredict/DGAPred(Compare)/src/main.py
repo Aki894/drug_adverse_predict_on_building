@@ -547,6 +547,7 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
                                                                                                            global_side_features_tensor,
                                                                                                            lossfunction1=Classification_criterion,
                                                                                                            lossfunction2=Regression_criterion,
+                                                                                                           args=args,
                                                                                                            epoch=epoch,
                                                                                                            threshold=args.metric_threshold)
                                                                                         
@@ -588,6 +589,7 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
             model, _train_loader, device, global_drug_features_tensor, global_side_features_tensor,
             lossfunction1=Classification_criterion,
             lossfunction2=Regression_criterion,
+            args=args,
             epoch=epoch,
             threshold=args.metric_threshold
         )
@@ -606,6 +608,7 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
         model, _test, device, global_drug_features_tensor, global_side_features_tensor,
         lossfunction1=Classification_criterion,
         lossfunction2=Regression_criterion,
+        args=args,
         epoch=epoch,
         threshold=final_threshold
     )
@@ -659,7 +662,12 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
     losses = []  # 记录每个batch的loss
 
     # 创建进度条
-    pbar = tqdm(enumerate(train_loader, 0), total=len(train_loader), desc="Training")
+    pbar = tqdm(
+        enumerate(train_loader, 0),
+        total=len(train_loader),
+        desc="Training",
+        disable=args.disable_tqdm if args is not None else False
+    )
     for step, (drug_idx, side_idx, ratings) in pbar:
         
         # 构建二分类标签
@@ -723,11 +731,12 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
         
         # 更新进度条显示（显示最近10个batch的平均loss）
         recent_loss = np.mean(losses[-10:]) if len(losses) >= 10 else np.mean(losses)
-        pbar.set_postfix({'loss': f'{recent_loss:.4f}', 'avg': f'{avg_loss/(step+1):.4f}'})
+        if not (args.disable_tqdm if args is not None else False):
+            pbar.set_postfix({'loss': f'{recent_loss:.4f}', 'avg': f'{avg_loss/(step+1):.4f}'})
 
     return avg_loss, step
 
-def test(model, test_loader, device, global_drug_features, global_side_features, lossfunction1, lossfunction2, epoch=0, threshold=0.5):
+def test(model, test_loader, device, global_drug_features, global_side_features, lossfunction1, lossfunction2, args=None, epoch=0, threshold=0.5):
     """测试函数 - 带进度条和实时指标"""
     model.eval()
     
@@ -740,7 +749,12 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
     test_avg_loss = 0.0
     
     # 创建进度条，使用no_grad避免构建计算图
-    pbar = tqdm(enumerate(test_loader), total=len(test_loader), desc="Testing")
+    pbar = tqdm(
+        enumerate(test_loader),
+        total=len(test_loader),
+        desc="Testing",
+        disable=args.disable_tqdm if args is not None else False
+    )
     with torch.no_grad():
       for step, (drug_idx, side_idx, ratings) in pbar:
         # 构建二分类标签
@@ -782,7 +796,8 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
         label_truth.append(list(labels.data.cpu().numpy()))
         
         # 更新进度条显示（显示平均loss）
-        pbar.set_postfix({'loss': f'{test_avg_loss/(step+1):.4f}'})
+        if not (args.disable_tqdm if args is not None else False):
+            pbar.set_postfix({'loss': f'{test_avg_loss/(step+1):.4f}'})
 
     pred1 = np.array(sum(pred1, []), dtype = np.float32)
     pred2 = np.array(sum(pred2, []), dtype=np.float32)
@@ -832,6 +847,8 @@ if __name__ == '__main__':
                         metavar='N', help='PyTorch CPU算子调度线程数，0表示使用环境默认值')
     parser.add_argument('--pin_memory', action=argparse.BooleanOptionalAction, default=False,
                         help='DataLoader pinned memory; disable by default for vGPU/HAMI stability')
+    parser.add_argument('--disable_tqdm', action='store_true',
+                        help='关闭batch级进度条，适合远程后台长实验，减少日志I/O')
     parser.add_argument('--rawpath', type=str, default='pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/',
                         metavar='STRING', help='rawpath')
 
