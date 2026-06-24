@@ -245,3 +245,21 @@ Remote exploratory evaluation:
 - 30-epoch base + graph-prior max, 0.5/0.5 score average, 3 available folds: AUC 0.93019, AUPR 0.92598, ACC 0.85695, MCC 0.71393.
 
 Interpretation: score averaging is the most promising new evidence in this turn. It improves the 5-epoch base on all metrics and turns the weak partial 30-epoch graph-prior standalone run into a positive complementary signal over the available folds. It needs full-fold validation before being promoted as the final method.
+
+Remote script verification:
+
+```bash
+python pythonPredict/DGAPred\(Compare\)/src/evaluate_prediction_ensemble.py \
+  --output_a pythonPredict/DGAPred\(Compare\)/2drug-2side/DGAPred/data/output_20260624_084455_solo5_foldlocal_base \
+  --output_b pythonPredict/DGAPred\(Compare\)/2drug-2side/DGAPred/data/output_20260624_134911_solo5_graph_prior \
+  --weight_a 0.5 --folds 5
+```
+
+Verified output: Mean AUC 0.91368, AUPR 0.90930, ACC 0.83054, MCC 0.66465 over 5 folds.
+
+Full-validation setup:
+
+- Restarted a clean 30-epoch graph-prior run to produce all five folds for ensemble validation.
+- PID: `901791`.
+- Log: `/data/ccc/ADR/logs/e30_graph_prior_retry_20260624_153914.log`.
+- Run name: `e30_graph_prior_retry`.

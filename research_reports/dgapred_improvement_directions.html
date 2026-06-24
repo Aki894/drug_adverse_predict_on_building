@@ -230,6 +230,7 @@
           <tr><td>Mean graph prior</td><td>5</td><td>0.90724</td><td>0.90023</td><td>0.82657</td><td>0.65638</td><td>早停负向筛选：mean 聚合低于 base。</td></tr>
           <tr><td>Base + graph score ensemble</td><td>5</td><td>0.91368</td><td>0.90930</td><td>0.83054</td><td>0.66465</td><td><span class="good">当前最有希望的新证据</span>；0.5/0.5 分数平均，全指标高于 5 epoch base。</td></tr>
           <tr><td>Base + graph score ensemble</td><td>30</td><td>0.93019</td><td>0.92598</td><td>0.85695</td><td>0.71393</td><td>仅 3/5 折；在可用折上高于 base 与 graph standalone partial mean，需完整验证。</td></tr>
+          <tr><td>Graph prior retry for ensemble</td><td>30</td><td colspan="4">运行中</td><td>重新跑完整 5 折图先验，供 30 epoch score ensemble 与 base30 做最终验证。</td></tr>
         </tbody>
       </table>
     </section>

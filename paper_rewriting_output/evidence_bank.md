@@ -153,3 +153,11 @@ Exploratory result from saved prediction files:
 | 30-epoch base + graph-prior max | 3 | 0.5 / 0.5 | 0.93019 | 0.92598 | 0.85695 | 0.71393 | Partial 3-fold evidence; improves over both available partial base and partial graph-prior means. Needs full graph-prior folds or a rerun to verify. |
 
 This suggests the graph prior may be most useful as a complementary score signal rather than as a standalone long-training replacement.
+
+Remote verification with the committed evaluator reproduced the 5-fold 5-epoch ensemble mean: AUC 0.91368, AUPR 0.90930, ACC 0.83054, MCC 0.66465.
+
+Full-validation next step: a clean 30-epoch graph-prior run is active on `server-NER` to generate all five folds for 30-epoch ensemble validation against `e30_base_quiet_u`.
+
+- PID: `901791`
+- Log: `/data/ccc/ADR/logs/e30_graph_prior_retry_20260624_153914.log`
+- Run name: `e30_graph_prior_retry`
