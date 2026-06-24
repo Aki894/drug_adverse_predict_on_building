@@ -193,3 +193,55 @@ Remote queue status:
 - Queued after active graph-prior PID `721883` finishes, to avoid GPU contention.
 - Queue wrapper PID: `842959`.
 - Log: `/data/ccc/ADR/logs/solo5_reliable_neg_p90_20260624_151900.log`.
+
+Early-stop status:
+
+- The preceding 30-epoch graph-prior process stalled during fold 4 after completing 3/5 folds; the partial mean was AUC 0.92915, AUPR 0.92474, ACC 0.85478, MCC 0.70963, below the 30-epoch base comparator. It was terminated to unblock the queued experiment.
+- Reliable negative filtering started and completed fold 1 with AUC 0.90739, AUPR 0.89877, ACC 0.83031, MCC 0.66253. This is clearly below the 5-epoch base on AUC/AUPR, so the run was terminated as a negative early-stop screen.
+
+### Low-Weight Graph Prior Follow-Up
+
+Rationale: graph prior with weight 0.5 improved 5-epoch AUC/AUPR but underperformed the 30-epoch base in the partial long run. A smaller residual may keep the short-run ranking benefit while reducing over-regularization.
+
+Remote run:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_prior_w02 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.2 --graph_prior_combine max
+```
+
+- PID: `869136` wrapper / `869141` python.
+- Log: `/data/ccc/ADR/logs/solo5_graph_prior_w02_20260624_152739.log`.
+
+Early-stop status:
+
+- Fold 1 finished with AUC 0.90755, AUPR 0.90026, ACC 0.83020, MCC 0.66051.
+- This is below the 5-epoch base and below the original graph-prior weight 0.5 screen, so the run was terminated.
+
+### Mean-Aggregated Graph Prior Follow-Up
+
+Rationale: reducing the graph-prior weight weakened the signal. The next test keeps weight 0.5 but changes aggregation from `max` to `mean`, checking whether a smoother prior is more stable than a weaker prior.
+
+Remote run:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_prior_mean --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.5 --graph_prior_combine mean
+```
+
+- PID: `885892` wrapper / `885897` python.
+- Log: `/data/ccc/ADR/logs/solo5_graph_prior_mean_20260624_153337.log`.
+
+Early-stop status:
+
+- Fold 1 finished with AUC 0.90724, AUPR 0.90023, ACC 0.82657, MCC 0.65638.
+- This is below the 5-epoch base. Mean aggregation was terminated as a negative screen.
+
+### Score-Level Ensemble Evaluation
+
+Implementation status: added `pythonPredict/DGAPred(Compare)/src/evaluate_prediction_ensemble.py` to evaluate fixed-weight score averages from saved `testdata_fold*.pkl` files.
+
+Remote exploratory evaluation:
+
+- 5-epoch base + graph-prior max, 0.5/0.5 score average, 5 folds: AUC 0.91368, AUPR 0.90930, ACC 0.83054, MCC 0.66465.
+- 30-epoch base + graph-prior max, 0.5/0.5 score average, 3 available folds: AUC 0.93019, AUPR 0.92598, ACC 0.85695, MCC 0.71393.
+
+Interpretation: score averaging is the most promising new evidence in this turn. It improves the 5-epoch base on all metrics and turns the weak partial 30-epoch graph-prior standalone run into a positive complementary signal over the available folds. It needs full-fold validation before being promoted as the final method.

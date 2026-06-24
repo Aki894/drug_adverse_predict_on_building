@@ -114,3 +114,42 @@ python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_reliable
 ```
 
 Remote status: queued on `server-NER` behind the active graph-prior run to avoid resource contention. Queue wrapper PID is `842959`; log is `/data/ccc/ADR/logs/solo5_reliable_neg_p90_20260624_151900.log`.
+
+Early-stop result: fold 1 finished with AUC 0.90739, AUPR 0.89877, ACC 0.83031, MCC 0.66253, below the 5-epoch base. The run was terminated as a negative screen.
+
+## Low-Weight Graph Prior Follow-Up
+
+Because graph prior weight 0.5 was positive in 5-epoch screening but weak in the partial 30-epoch run, the next active test reduces the logit residual weight to 0.2 while keeping max aggregation.
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_prior_w02 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.2 --graph_prior_combine max
+```
+
+Remote status: running on `server-NER`; log `/data/ccc/ADR/logs/solo5_graph_prior_w02_20260624_152739.log`.
+
+Early-stop result: fold 1 finished with AUC 0.90755, AUPR 0.90026, ACC 0.83020, MCC 0.66051, below the 5-epoch base. Lowering the residual weight to 0.2 appears to weaken rather than stabilize the graph-prior signal.
+
+## Mean-Aggregated Graph Prior Follow-Up
+
+Next active test: keep graph-prior weight 0.5 but switch aggregation from `max` to `mean`.
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_graph_prior_mean --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_weight 0.5 --graph_prior_combine mean
+```
+
+Remote status: running on `server-NER`; log `/data/ccc/ADR/logs/solo5_graph_prior_mean_20260624_153337.log`.
+
+Early-stop result: fold 1 finished with AUC 0.90724, AUPR 0.90023, ACC 0.82657, MCC 0.65638, below the 5-epoch base. Mean aggregation is a negative screen.
+
+## Score-Level Ensemble Evidence
+
+Added reusable evaluator: `pythonPredict/DGAPred(Compare)/src/evaluate_prediction_ensemble.py`.
+
+Exploratory result from saved prediction files:
+
+| Ensemble | Folds | Weight | AUC | AUPR | ACC | MCC | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 5-epoch base + graph-prior max | 5 | 0.5 / 0.5 | 0.91368 | 0.90930 | 0.83054 | 0.66465 | Improves over 5-epoch base on all metrics and is more balanced than graph-prior alone. |
+| 30-epoch base + graph-prior max | 3 | 0.5 / 0.5 | 0.93019 | 0.92598 | 0.85695 | 0.71393 | Partial 3-fold evidence; improves over both available partial base and partial graph-prior means. Needs full graph-prior folds or a rerun to verify. |
+
+This suggests the graph prior may be most useful as a complementary score signal rather than as a standalone long-training replacement.

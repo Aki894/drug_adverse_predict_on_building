@@ -225,7 +225,11 @@
           <tr><td>Fold-local graph prior</td><td>5</td><td>0.91357</td><td>0.90903</td><td>0.82870</td><td>0.66187</td><td><span class="good">当前最佳短训排序指标方向</span>；AUC/AUPR 高于 5 epoch base。</td></tr>
           <tr><td>Graph prior + threshold calibration</td><td>5</td><td>0.91188</td><td>0.90772</td><td>0.83296</td><td>0.66644</td><td>全指标高于 5 epoch base，但牺牲图先验单独版本的 AUC/AUPR。</td></tr>
           <tr><td>Fold-local graph prior</td><td>30</td><td>0.92915</td><td>0.92474</td><td>0.85478</td><td>0.70963</td><td>运行中，已完成 3/5 折；暂时低于 30 epoch base。</td></tr>
-          <tr><td>Reliable negative filtering</td><td>5</td><td colspan="4">待运行</td><td>新增候选：只过滤训练候选负样本中双侧风险最高的一小段。</td></tr>
+          <tr><td>Reliable negative filtering</td><td>5</td><td>0.90739</td><td>0.89877</td><td>0.83031</td><td>0.66253</td><td>早停负向筛选：fold 1 已低于 5 epoch base 的 AUC/AUPR。</td></tr>
+          <tr><td>Low-weight graph prior</td><td>5</td><td>0.90755</td><td>0.90026</td><td>0.83020</td><td>0.66051</td><td>早停负向筛选：降低权重削弱了图先验信号。</td></tr>
+          <tr><td>Mean graph prior</td><td>5</td><td>0.90724</td><td>0.90023</td><td>0.82657</td><td>0.65638</td><td>早停负向筛选：mean 聚合低于 base。</td></tr>
+          <tr><td>Base + graph score ensemble</td><td>5</td><td>0.91368</td><td>0.90930</td><td>0.83054</td><td>0.66465</td><td><span class="good">当前最有希望的新证据</span>；0.5/0.5 分数平均，全指标高于 5 epoch base。</td></tr>
+          <tr><td>Base + graph score ensemble</td><td>30</td><td>0.93019</td><td>0.92598</td><td>0.85695</td><td>0.71393</td><td>仅 3/5 折；在可用折上高于 base 与 graph standalone partial mean，需完整验证。</td></tr>
         </tbody>
       </table>
     </section>
