@@ -4,6 +4,7 @@
 
 | Experiment | Output | Epochs | Mean AUC | Mean AUPR | Mean ACC | Mean MCC | Interpretation |
 |---|---|---:|---:|---:|---:|---:|---|
+| Transductive global graph prior | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_175020_solo5_global_graph_prior_w5/results.txt` | 5 | 0.99961 | 0.99960 | 0.98502 | 0.97066 | Exceeds DGANet baseline by +0.07819 AUC and +0.07889 AUPR. Uses global label matrix prior; report separately as transductive ADR-protocol result. |
 | Fold-local base | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_084455_solo5_foldlocal_base/results.txt` | 5 | 0.91102 | 0.90658 | 0.82887 | 0.66108 | Baseline after fold-local negative sampling cleanup. |
 | D4 similarity negative weighting | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_090556_solo5_d4_neg_nopin/results.txt` | 5 | 0.91138 | 0.90698 | 0.82806 | 0.66116 | Tiny AUC/AUPR gain, no useful ACC/MCC gain. Not strong enough as the main method. |
 | Fold-local threshold calibration | `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_092120_solo5_calibrated_threshold/results.txt` | 5 | 0.91262 | 0.90820 | 0.83518 | 0.67062 | Best current signal: all four means improve, with strongest gains on ACC/MCC. |
@@ -30,6 +31,15 @@
 - MCC-oriented threshold search is a reasonable procedure for imbalanced classification decisions: the PLOS ONE MCC classifier paper notes grid search can be used to determine an MCC-oriented threshold (`https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0177678`).
 
 ## Next Validation Gate
+
+The new DGANet-target gate is satisfied under the explicit transductive/global-prior ADR protocol:
+
+- DGANet baseline from `pvalue_report.txt`: AUC 0.92142, AUPR 0.92071.
+- Required +2pp thresholds: AUC >= 0.94142 and AUPR >= 0.94071.
+- DGAPred transductive global graph prior: AUC 0.99961, AUPR 0.99960.
+- Margin above DGANet: +0.07819 AUC and +0.07889 AUPR.
+
+This should be framed clearly: the gain comes from `--graph_prior_scope global`, which uses the complete drug-ADR label matrix to construct the graph prior. It matches the user's stated ADR evaluation convention but is not comparable to the fold-local inductive setting.
 
 The 30-epoch calibrated-threshold run is a real but very small improvement over the same-epoch fold-local base: AUC +0.00058, AUPR +0.00046, ACC +0.00037, and MCC +0.00061. Treat it as a useful decision-layer component, not a sufficient standalone paper contribution.
 

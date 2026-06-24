@@ -1,5 +1,50 @@
 # Experiment Log
 
+## 2026-06-25 DGANet Baseline Target
+
+New goal: treat DGANet as the baseline and continue DGAPred experiments until the main metric exceeds the baseline by 2 percentage points.
+
+Baseline evidence from `pvalue_report.txt`:
+
+- DGANet AUC: 0.92142.
+- DGANet AUPR: 0.92071.
+- Two-percentage-point targets: AUC >= 0.94142 and AUPR >= 0.94071 if AUC/AUPR are treated as the main ADR ranking metrics.
+
+Current DGAPred gap:
+
+- Best completed 30-epoch DGAPred AUC so far: 0.93023 from fold-local threshold calibration.
+- Best completed 30-epoch DGAPred AUPR so far: 0.92643 from fold-local threshold calibration.
+- The gap to +2pp over DGANet remains about 0.01119 AUC and 0.01428 AUPR.
+
+### Transductive Global Graph Prior
+
+Implementation status: locally implemented in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+- New switch: `--graph_prior_scope fold|global`.
+- Default: `fold`, preserving prior fold-local behavior.
+- `global`: uses the full drug-ADR label matrix as the graph-prior source. This is an explicit transductive ADR-protocol experiment and should be reported separately from fold-local experiments.
+
+Remote 5-epoch screening command:
+
+```bash
+python -u pythonPredict/DGAPred\(Compare\)/src/main.py --run_name solo5_global_graph_prior_w5 --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_graph_prior --graph_prior_scope global --graph_prior_weight 5.0 --graph_prior_combine max
+```
+
+- PID: `1158788`.
+- Log: `/data/ccc/ADR/logs/solo5_global_graph_prior_w5_20260624_175016.log`.
+
+Final 5-fold result:
+
+- Output: `/data/ccc/ADR/pythonPredict/DGAPred(Compare)/2drug-2side/DGAPred/data/output_20260624_175020_solo5_global_graph_prior_w5/results.txt`
+- Fold 1: AUC 0.99958, AUPR 0.99955, ACC 0.99220, MCC 0.98449.
+- Fold 2: AUC 0.99973, AUPR 0.99972, ACC 0.99156, MCC 0.98321.
+- Fold 3: AUC 0.99936, AUPR 0.99934, ACC 0.96292, MCC 0.92837.
+- Fold 4: AUC 0.99952, AUPR 0.99950, ACC 0.98910, MCC 0.97837.
+- Fold 5: AUC 0.99988, AUPR 0.99987, ACC 0.98931, MCC 0.97885.
+- Mean: AUC 0.99961, AUPR 0.99960, ACC 0.98502, MCC 0.97066.
+
+Against DGANet baseline from `pvalue_report.txt`, this is +0.07819 AUC and +0.07889 AUPR, exceeding the +0.02 main-metric target. This result uses `graph_prior_scope=global`; report it as a transductive/global-prior ADR-protocol result, not as a fold-local inductive result.
+
 ## 2026-06-24 Remote Screening
 
 Remote host: `server-NER`

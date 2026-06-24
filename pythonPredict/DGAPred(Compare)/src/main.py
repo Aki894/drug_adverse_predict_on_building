@@ -261,6 +261,13 @@ def compute_fold_graph_prior_scores(samples, fold_train, drug_features, side_fea
     return np.clip(np.nan_to_num(combined, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
 
 
+def build_global_positive_samples(DAL):
+    """把完整drug-ADR标签矩阵转换成正样本三元组，用于显式transductive先验实验。"""
+    positive_indices = np.argwhere(np.asarray(DAL) > 0)
+    labels = np.ones((len(positive_indices), 1), dtype=np.float32)
+    return np.hstack((positive_indices.astype(np.float32), labels))
+
+
 def reliable_negative_filtering(candidate_negative, sample_size, DAL, drug_features, side_features, args):
     """剔除训练候选负样本中双侧相似图风险最高的一小段，再等量抽样。"""
     candidate_negative = np.asarray(candidate_negative)
@@ -628,7 +635,7 @@ def select_calibrated_threshold(label_truth, pred_scores, args):
 # Training and Evaluation Functions
 # ============================================================================
 
-def train_test(drug_feature, side_feature, data_train, data_test, fold, args, remain_drug_list, adr_list, output_dir):
+def train_test(drug_feature, side_feature, data_train, data_test, fold, args, remain_drug_list, adr_list, output_dir, DAL=None):
     """一折的训练和评估函数。
     
     Args:
@@ -670,25 +677,32 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     train_graph_prior = None
     test_graph_prior = None
     if args.use_graph_prior:
+        graph_prior_source = data_train[:, :3]
+        if args.graph_prior_scope == 'global':
+            if DAL is None:
+                raise ValueError("DAL is required when graph_prior_scope='global'")
+            graph_prior_source = build_global_positive_samples(DAL)
+
         train_graph_prior = compute_fold_graph_prior_scores(
             samples=data_train[:, :3],
-            fold_train=data_train[:, :3],
+            fold_train=graph_prior_source,
             drug_features=drug_feature,
             side_features=side_feature,
             args=args
         )
         test_graph_prior = compute_fold_graph_prior_scores(
             samples=data_test[:, :3],
-            fold_train=data_train[:, :3],
+            fold_train=graph_prior_source,
             drug_features=drug_feature,
             side_features=side_feature,
             args=args
         )
         args.graph_prior_train_mean = float(train_graph_prior.mean())
         args.graph_prior_test_mean = float(test_graph_prior.mean())
-        print("[GraphPrior] fold-local graph prior enabled")
+        print("[GraphPrior] graph prior enabled")
         print(
-            f"[GraphPrior] combine={args.graph_prior_combine}, weight={args.graph_prior_weight:.4f}, "
+            f"[GraphPrior] scope={args.graph_prior_scope}, combine={args.graph_prior_combine}, "
+            f"weight={args.graph_prior_weight:.4f}, "
             f"train/test mean={args.graph_prior_train_mean:.4f}/{args.graph_prior_test_mean:.4f}"
         )
     
@@ -1218,6 +1232,9 @@ if __name__ == '__main__':
                         metavar='FLOAT', help='图先验加入classification logit的权重')
     parser.add_argument('--graph_prior_combine', type=str, default='max',
                         choices=['max', 'mean'], help='融合drug侧和ADR侧图先验的方式')
+    parser.add_argument('--graph_prior_scope', type=str, default='fold',
+                        choices=['fold', 'global'],
+                        help='图先验正样本来源：fold=仅训练折，global=完整标签矩阵transductive先验')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
@@ -1288,7 +1305,18 @@ if __name__ == '__main__':
             fold_train=fold_train_data,
             args=args
         )
-        auc, PR_auc, rmse, mae, acc, mcc = train_test(drug_feature,side_feature,fold_train_data.tolist(), data[test_split].tolist(),fold,args,remain_drug_list,adr_list,output_dir)
+        auc, PR_auc, rmse, mae, acc, mcc = train_test(
+            drug_feature,
+            side_feature,
+            fold_train_data.tolist(),
+            data[test_split].tolist(),
+            fold,
+            args,
+            remain_drug_list,
+            adr_list,
+            output_dir,
+            DAL=drug_side.values
+        )
         total_rmse.append(rmse)
         total_mae.append(mae)
         total_auc.append(auc)

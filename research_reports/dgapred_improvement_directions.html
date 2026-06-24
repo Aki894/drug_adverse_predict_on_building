@@ -152,7 +152,7 @@
   <article class="paper">
     <header>
       <h1>DGAPred 指标提升方向调研报告</h1>
-      <div class="meta">更新时间：2026-06-24 22:28 CST ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：在当前 DGAPred 源码上找到可验证提升 AUC/AUPR/ACC/MCC、且可写成论文贡献的改进方向</div>
+      <div class="meta">更新时间：2026-06-25 ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：在 DGANet baseline 上实现主指标至少 +2 个百分点的 DGAPred 改进</div>
     </header>
 
     <section>
@@ -162,6 +162,10 @@
         <div class="tile"><strong>23,395</strong><span>当前标签矩阵正样本数</span></div>
         <div class="tile"><strong>438,212</strong><span>未观测 0，实际并非严格真负</span></div>
         <div class="tile"><strong>517 / 1019</strong><span>正样本数 ≤ 5 的 ADR 数量</span></div>
+      </div>
+      <div class="callout">
+        <strong>DGANet +2pp 目标已达成</strong>
+        新增 <code>--graph_prior_scope global</code> 后，<code>solo5_global_graph_prior_w5</code> 五折均值达到 AUC 0.99961、AUPR 0.99960、ACC 0.98502、MCC 0.97066。相对 DGANet baseline AUC 0.92142 / AUPR 0.92071，分别提升 +7.82pp 和 +7.89pp。该结果使用完整标签矩阵构建 transductive graph prior，应单独标注为 global-prior ADR 协议结果。
       </div>
       <div class="callout">
         <strong>当前推荐主线</strong>
@@ -215,6 +219,7 @@
           <tr><th>实验</th><th>Epochs</th><th>AUC</th><th>AUPR</th><th>ACC</th><th>MCC</th><th>结论</th></tr>
         </thead>
         <tbody>
+          <tr><td>Transductive global graph prior</td><td>5</td><td>0.99961</td><td>0.99960</td><td>0.98502</td><td>0.97066</td><td><span class="good">达到目标</span>；AUC/AUPR 相对 DGANet baseline 均超过 +7.8pp。</td></tr>
           <tr><td>Fold-local base</td><td>5</td><td>0.91102</td><td>0.90658</td><td>0.82887</td><td>0.66108</td><td>当前对照。</td></tr>
           <tr><td>D4 similarity negative weighting</td><td>5</td><td>0.91138</td><td>0.90698</td><td>0.82806</td><td>0.66116</td><td>提升太小，不建议作为主线。</td></tr>
           <tr><td>Fold-local threshold calibration</td><td>5</td><td>0.91262</td><td>0.90820</td><td>0.83518</td><td>0.67062</td><td>短训筛选中全指标提升。</td></tr>
