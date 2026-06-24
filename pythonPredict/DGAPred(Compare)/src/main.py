@@ -93,13 +93,14 @@ def compute_d4_negative_risks(negative_samples, DAL, drug_sim):
     return np.clip(np.nan_to_num(risks, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
 
 
-def d4_similarity_aware_negative_resampling(addition_negative_sample, final_positive_sample,
-                                            final_negative_sample, DAL, drug_features, args):
-    """复用剩余负样本池，对高假阴性风险负样本降权后重新抽取1:1负样本。"""
+def d4_similarity_aware_negative_resampling(candidate_negative, sample_size, DAL, drug_features, args):
+    """从候选负样本池中抽样，对高假阴性风险负样本降权但不直接删除。"""
     if not args.use_d4_similarity_negative_weighting:
-        return final_negative_sample
+        if len(candidate_negative) < sample_size:
+            raise ValueError(f"negative candidates ({len(candidate_negative)}) < sample_size ({sample_size})")
+        sampled_idx = np.random.choice(len(candidate_negative), size=sample_size, replace=False)
+        return candidate_negative[sampled_idx]
 
-    candidate_negative = np.vstack((final_negative_sample, addition_negative_sample))
     drug_sim = build_d4_drug_similarity(drug_features)
     risks = compute_d4_negative_risks(candidate_negative, DAL, drug_sim)
     cutoff = np.percentile(risks, args.d4_negative_risk_percentile)
@@ -109,7 +110,6 @@ def d4_similarity_aware_negative_resampling(addition_negative_sample, final_posi
     weights = np.clip(weights, args.d4_negative_min_weight, 1.0)
     probs = weights / weights.sum()
 
-    sample_size = len(final_positive_sample)
     sampled_idx = np.random.choice(len(candidate_negative), size=sample_size, replace=False, p=probs)
     sampled_negative = candidate_negative[sampled_idx]
     sampled_risks = risks[sampled_idx]
@@ -125,6 +125,34 @@ def d4_similarity_aware_negative_resampling(addition_negative_sample, final_posi
     print(f"[D4] risk percentile cutoff: {cutoff:.4f}, min_weight: {args.d4_negative_min_weight:.4f}")
     print(f"[D4] risk mean before/after: {risks.mean():.4f} / {sampled_risks.mean():.4f}")
     return sampled_negative
+
+
+def build_d4_fold_training_data(data_train, data_test, all_negative_candidates, DAL, drug_features, args):
+    """只在当前fold的训练集内重采样负样本，测试集保持原始划分不动。"""
+    data_train = np.asarray(data_train)
+    data_test = np.asarray(data_test)
+    train_positive = data_train[data_train[:, 2] > 0]
+
+    test_negative_pairs = {
+        (int(row[0]), int(row[1]))
+        for row in data_test
+        if row[2] <= 0
+    }
+    candidate_negative = np.asarray([
+        row for row in all_negative_candidates
+        if (int(row[0]), int(row[1])) not in test_negative_pairs
+    ])
+
+    sampled_negative = d4_similarity_aware_negative_resampling(
+        candidate_negative=candidate_negative,
+        sample_size=len(train_positive),
+        DAL=DAL,
+        drug_features=drug_features,
+        args=args
+    )
+    fold_train = np.vstack((train_positive, sampled_negative))
+    np.random.shuffle(fold_train)
+    return fold_train
 
 
 # 设置系统路径
@@ -159,6 +187,9 @@ def load_label(screen_drug_list, use_DGen, use_AGen, args):
         print(f"[Cache] Loading from cache: {cache_path}")
         drug_side = pd.read_csv(cache_path, header=0, index_col=0)
         return list(drug_side.index), list(drug_side.columns), drug_side
+
+    if screen_drug_list is None:
+        screen_drug_list = []
 
     # Load label data
     pd_label = pd.read_csv(args.rawpath + "sider_pert_mesh_list.csv", header=0, delimiter='\t')
@@ -613,7 +644,10 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
         
         # 计算损失
         loss1 = lossfunction1(logits, y_target.to(device))
-        loss2 = lossfunction2(reconstruction[one_label_index], ratings[one_label_index].to(device))
+        if len(one_label_index[0]) > 0:
+            loss2 = lossfunction2(reconstruction[one_label_index], ratings[one_label_index].to(device))
+        else:
+            loss2 = logits.new_tensor(0.0)
         lambda_cls = 0.7  # 分类任务权重
         total_loss = lambda_cls * loss1 + (1 - lambda_cls) * loss2
         
@@ -677,7 +711,10 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
         
         # 计算损失
         loss1 = lossfunction1(scores_one, labels.to(device))#BCEWithLogitsLoss内部会做sigmoid
-        loss2 = lossfunction2(scores_two[one_label_index], ratings[one_label_index].to(device))#在正样本上计算MSELoss
+        if len(one_label_index[0]) > 0:
+            loss2 = lossfunction2(scores_two[one_label_index], ratings[one_label_index].to(device))#在正样本上计算MSELoss
+        else:
+            loss2 = scores_one.new_tensor(0.0)
         lambda_cls = 0.7
         test_loss = lambda_cls * loss1 + (1 - lambda_cls) * loss2
         test_avg_loss += test_loss.detach().item()
@@ -751,11 +788,14 @@ if __name__ == '__main__':
     parser.add_argument('--dropout2', type=float, default=0.2,metavar='FLOAT', help='Final prediction dropout rate')
     parser.add_argument('--label_smooth', type=float, default=0.05,metavar='FLOAT', help='二分类标签平滑系数(0~0.2)，仅训练使用')
     parser.add_argument('--grad_clip', type=float, default=0.5,metavar='FLOAT', help='梯度裁剪阈值，<=0 关闭')
-    parser.add_argument('--use_scheduler', action='store_true', help='启用基于验证AUC的ReduceLROnPlateau学习率调度',default=True)
+    parser.add_argument('--use_scheduler', action=argparse.BooleanOptionalAction, default=True,
+                        help='启用基于验证AUC的ReduceLROnPlateau学习率调度')
     # FIA-DTA 2025: 特征交互注意力机制，增强药物与靶标的多模态特征交互
     # CCL-ASPS 2024: 协同对比学习框架，提升模型表征能力
-    parser.add_argument('--use_feature_interaction', action='store_true', help='启用特征交互注意力 (FIA-DTA 2025)',default=True)
-    parser.add_argument('--use_contrastive_learning', action='store_true', help='启用协同对比学习 (CCL-ASPS 2024)',default=True)
+    parser.add_argument('--use_feature_interaction', action=argparse.BooleanOptionalAction, default=True,
+                        help='启用特征交互注意力 (FIA-DTA 2025)')
+    parser.add_argument('--use_contrastive_learning', action=argparse.BooleanOptionalAction, default=True,
+                        help='启用协同对比学习 (CCL-ASPS 2024)')
     parser.add_argument('--contrastive_weight', type=float, default=0.20, metavar='FLOAT', help='对比学习损失权重')
     parser.add_argument('--contrastive_loss_type', type=str, default='standard',
                         choices=['standard', 'debiased'], help='D4对比损失类型')
@@ -776,9 +816,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
-    druglist = pd.read_csv(args.rawpath+"lincs_druglist_ge_go_521.csv")
+
+    cache_path = os.path.join(args.similarity_path, "drug_side.csv")
+    if os.path.exists(cache_path):
+        druglist = None
+    else:
+        druglist_path = os.path.join(args.rawpath, "lincs_druglist_ge_go_521.csv")
+        druglist = pd.read_csv(druglist_path)
     
-    remain_drug_list,adr_list, drug_side = load_label(druglist["pert_id"],True,True, args)#drug_sided的行索引remain_drug_list,列索引adr_list
+    screen_drug_list = None if druglist is None else druglist["pert_id"]
+    remain_drug_list,adr_list, drug_side = load_label(screen_drug_list,True,True, args)#drug_sided的行索引remain_drug_list,列索引adr_list
     print("drug_side shape:",pd.DataFrame(drug_side).shape)
 
     # 加载药物和不良反应特征；D4负样本风险评分需要先拿到药物相似性矩阵。
@@ -787,14 +834,7 @@ if __name__ == '__main__':
     
     #不参与训练的负样本，len(final_positive_sample)=len(final_negative_sample)
     addition_negative_sample, final_positive_sample, final_negative_sample = Extract_positive_negative_samples(drug_side.values, addition_negative_number='all')#分离正负样本并均衡正负样本
-    final_negative_sample = d4_similarity_aware_negative_resampling(
-        addition_negative_sample,
-        final_positive_sample,
-        final_negative_sample,
-        drug_side.values,
-        drug_feature,
-        args
-    )
+    all_negative_candidates = np.vstack((final_negative_sample, addition_negative_sample))
     final_sample = np.vstack((final_positive_sample, final_negative_sample))
     X = final_sample[:, 0::]
     final_target = final_sample[:, final_sample.shape[1] - 1]
@@ -821,7 +861,15 @@ if __name__ == '__main__':
     for k, (train_split, test_split) in enumerate(kfold.split(data_x, data_y)):
         print("==================================fold {} start".format(fold))
         data = np.array(data)
-        auc, PR_auc, rmse, mae, acc, mcc = train_test(drug_feature,side_feature,data[train_split].tolist(), data[test_split].tolist(),fold,args,remain_drug_list,adr_list,output_dir)
+        fold_train_data = build_d4_fold_training_data(
+            data_train=data[train_split],
+            data_test=data[test_split],
+            all_negative_candidates=all_negative_candidates,
+            DAL=drug_side.values,
+            drug_features=drug_feature,
+            args=args
+        )
+        auc, PR_auc, rmse, mae, acc, mcc = train_test(drug_feature,side_feature,fold_train_data.tolist(), data[test_split].tolist(),fold,args,remain_drug_list,adr_list,output_dir)
         total_rmse.append(rmse)
         total_mae.append(mae)
         total_auc.append(auc)

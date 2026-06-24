@@ -1,0 +1,17 @@
+{
+  "workflow": "build_from_materials",
+  "scene": "journal",
+  "tier": "flash",
+  "output_language": "zh",
+  "target_name": "DGAPred ADR prediction improvement",
+  "materials_dir": ".",
+  "draft_path": "",
+  "user_motivation": "Improve DGAPred metrics through practical, literature-grounded changes while preserving ADR evaluation conventions.",
+  "official_urls": [],
+  "special_requirements": ["Use remote server server-NER for experiments", "Keep test fold convention unchanged"],
+  "word_output": "none",
+  "translation_package": "none",
+  "reference_mode": "local_first",
+  "reference_paths": ["."],
+  "citation_target_count": 20
+}
