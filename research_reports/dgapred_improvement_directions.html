@@ -167,6 +167,10 @@
         <strong>推荐下一轮主线</strong>
         以“训练目标和采样更适配 positive-unlabeled ADR 标签”为主线，优先测试 <code>PU-weighted BCE / nnPU 风格损失</code>、<code>低支持感知采样</code>、<code>side-aware 伪负风险评分</code>，并保留已经有效的 <code>fold-local threshold calibration</code> 作为决策层组件。
       </div>
+      <div class="callout">
+        <strong>实现状态更新</strong>
+        <code>PU-weighted BCE</code> 已作为默认关闭的实验开关实现并推送；远程已排队 <code>solo5_pu_weighted</code>，等待当前 30 epoch 阈值校准实验结束后自动运行。
+      </div>
     </section>
 
     <section>

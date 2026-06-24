@@ -27,3 +27,12 @@
 
 Run the same calibrated-threshold setting for 30 epochs and compare against a 30-epoch fold-local base under identical batch/thread/pin-memory settings. Treat the 5-epoch result as screening evidence only.
 
+## Implemented Follow-Up Direction
+
+PU-style negative BCE weighting has been implemented as a switchable follow-up experiment in `pythonPredict/DGAPred(Compare)/src/main.py`.
+
+- Switch: `--use_pu_negative_weighting`
+- Default behavior: off, so existing baseline/calibrated-threshold runs are unchanged.
+- Mechanism: positive samples keep weight 1.0; negative samples receive a BCE weight based on drug-side combined pseudo-negative risk.
+- Risk sources: drug similarity evidence plus optional ADR similarity evidence from MESH/GDA matrices.
+- First queued remote screen: `/data/ccc/ADR/logs/solo5_pu_weighted_wait_*.log`, configured to wait for the current 30-epoch calibrated-threshold run before starting.
