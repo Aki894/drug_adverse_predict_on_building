@@ -152,8 +152,84 @@
   <article class="paper">
     <header>
       <h1>DGAPred 指标提升方向调研报告</h1>
-      <div class="meta">更新时间：2026-06-25 ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：在 DGANet baseline 上实现主指标至少 +2 个百分点的 DGAPred 改进</div>
+      <div class="meta">更新时间：2026-06-26 ｜ 项目：<code>drug_adverse_predict_on_building</code> ｜ 目标：在 DGANet baseline 上实现主指标至少 +2 个百分点的 DGAPred 改进</div>
     </header>
+
+    <section>
+      <h2>2026-06-26 更新：下一步决策</h2>
+      <div class="callout">
+        <strong>结论</strong>
+        当前不建议再去另起一个全新的 “+2pp 创新点” 坑。现有最强已验证证据已经从旧的 structured contrastive 想法，转移到了 <code>directional conditional structural prior</code> 这条主线；下一步应该先把它做成 model-integrated 结果，再决定是否 pivot。
+      </div>
+      <table>
+        <thead>
+          <tr><th>候选方向</th><th>当前动作</th><th>为什么值得保留</th><th>失败后的下一步</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conditional structural prior</td>
+            <td>继续等待已排队 integrated prior 队列；优先看 <code>topk=10</code>、<code>topk=12</code>、<code>topk=12 + drug mean</code> 三个 run。</td>
+            <td>这是当前最强同协议 residual 证据主线，AUC/AUPR/ACC/MCC 全面超过旧的 D4+graph 短跑候选，方法叙事也更集中。</td>
+            <td>若前三个 integrated run 都不能稳定超过 5-epoch base，转去做 sample-ID-aligned fusion 或再回看 contrastive 备线。</td>
+          </tr>
+          <tr>
+            <td>Semantic-augmented conditional prior</td>
+            <td>保留为 ranking extension，并已新增更强队列：<code>0.90 / 0.06 / 0.04</code> 的 conditional/MESH/GDA mix。</td>
+            <td>离线 strict 5-fold residual 已到 AUC 0.92648、AUPR 0.92642，说明少量外部 ADR 语义有用；但目前增益主要来自 MESH，不是 GDA。</td>
+            <td>如果 integrated 版本只提升 ranking、不提升 balanced metrics，就把它作为主方法的 ranking 扩展或强化消融，而不是主结论。</td>
+          </tr>
+          <tr>
+            <td>MCC-threshold decision layer</td>
+            <td>保留为辅助组件，不单独升格为主创新。</td>
+            <td>在 non-semantic best residual 上，LOO MCC-threshold 仍是最强 decision-layer 版本：AUC 0.92398、AUPR 0.92557、ACC 0.85582、MCC 0.71166。</td>
+            <td>如果 integrated prior 最终偏 ranking 而阈值指标一般，可把这层和主方法组合，但写作上仍需把它定位为 auxiliary。</td>
+          </tr>
+          <tr>
+            <td>Drug-neighbor residual</td>
+            <td>保留为 lightweight refinement，而不是与 conditional dependency 并列主创新。</td>
+            <td>label-only 条件依赖已经很强：AUC 0.92378、AUPR 0.92458、ACC 0.85377、MCC 0.70754；加入 5% drug residual 后，AUPR 和 MCC 还会稳定再抬一点。</td>
+            <td>论文里写成“轻量增强项”更合适；如果 integrated 里增益消失，也不影响核心方法叙事。</td>
+          </tr>
+          <tr>
+            <td>Matrix minmax 归一化</td>
+            <td>降级为 protocol-consistency ablation，不当作高价值新方向。</td>
+            <td>直接用 <code>main.py</code> 的 prior 计算逻辑做比对后发现：对 non-semantic 主线几乎无影响，对当前 semantic 分支则完全等价。</td>
+            <td>等 queued integrated minmax run 出来后，主要用来说明 evaluator / model 对齐，而不是当成新的创新点。</td>
+          </tr>
+          <tr>
+            <td>ASL / pairwise ranking / contrastive 备线</td>
+            <td>继续保留，但降级为 conditional-prior 主线失败后的 backup。</td>
+            <td>这些方向都还可以试，但现在缺的不是想法，而是把当前最强主线做成 integrated 证据闭环。</td>
+            <td>只有当前 integrated prior 链条被实验证伪时，再回到这些备线。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>当前 integrated prior 队列仍被外部 GPU 进程 <code>3719813</code> 阻塞，日志尚未开始写入。已排队的核心 run 依次是：<code>solo5_conditional_topknoisyor_prior_topk10_mix005_after_conditional</code>、<code>solo5_conditional_topknoisyor_prior_topk12_mix005_after_topk10</code>、<code>solo5_conditional_topknoisyor_prior_topk12_drugmean_mix005_after_topk12max</code>、<code>solo5_conditional_topknoisyor_prior_topk12_drugmean_minmax_mix005_after_drugmean</code>、<code>solo5_conditionalhybrid_topknoisyor_prior_topk12_drugmean_mix005_after_minmax</code>，以及新追加的 <code>solo5_conditionalhybrid_c90_m06_g04_topknoisyor_prior_topk12_drugmean_after_oldhybrid</code>。</p>
+      <p>离线 strict 5-fold residual 里，当前 strongest non-semantic balanced branch 是 <code>conditional top-k noisy-or, top-k=12, drug mean</code>，结果为 AUC 0.92400、AUPR 0.92558、ACC 0.85565、MCC 0.71132。进一步的 LOO MCC-threshold 版本达到 AUC 0.92398、AUPR 0.92557、ACC 0.85582、MCC 0.71166。</p>
+      <p>一个很重要的简化结论是：主线并不依赖 drug residual 才成立。label-only 的 <code>conditional top-k noisy-or, top-k=12</code> 已经达到 AUC 0.92378、AUPR 0.92458、ACC 0.85377、MCC 0.70754；加入 5% drug residual 后，固定阈值下又带来 +0.00100 AUPR 和 +0.00378 MCC，LOO MCC-threshold 下又带来 +0.00099 AUPR 和 +0.00188 MCC。也就是说，<code>directional ADR dependency</code> 是方法核心，drug residual 是轻量增强，不是第二个同等主创新。</p>
+      <p>另一个容易混淆但现在已经厘清的点是 <code>minmax</code>：evaluator 里的 <code>score_transform=minmax</code> 会明显伤指标，但那不是 queue 里 <code>main.py --label_corr_matrix_transform minmax</code> 的含义。直接用 <code>main.py</code> 的 prior 计算逻辑对比后发现，后者对 non-semantic 主线几乎无影响，对当前 semantic 分支则数值上完全一致。所以这个 queued minmax run 更适合作为 protocol-consistency ablation，而不是新的高价值创新方向。</p>
+      <p>semantic 分支的新结论也更清楚了：<code>0.90 / 0.06 / 0.04</code> 的 conditional/MESH/GDA mix 比旧的 <code>0.90 / 0.05 / 0.05</code> 更强，strict residual 达到 AUC 0.92648、AUPR 0.92642、ACC 0.85550、MCC 0.71101，说明增益更偏向 MESH；但它在 decision-layer follow-up 中最好的版本也只有 AUC 0.92578、AUPR 0.92617、ACC 0.85550、MCC 0.71104，仍低于 non-semantic best MCC-threshold residual，所以更适合定位成 ranking extension，而不是 balanced 主方法。</p>
+      <p>ASL 备线已经排在当前 contrastive 队列之后：wrapper PID <code>3932401</code>，等待 subprocess PID <code>3932404</code>，日志将写到 <code>/data/ccc/ADR/logs/solo5_asl_gn4_clip005_after_contrastive_20260625_163956.log</code>。</p>
+      <p><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" --run_name solo5_asl_gn4_clip005_after_contrastive --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --classification_loss asl --asl_gamma_neg 4.0 --asl_clip 0.05</code></p>
+      <p>Pairwise ranking 备线已经排在 ASL 之后：wrapper PID <code>3940528</code>，等待 subprocess PID <code>3940531</code>，日志将写到 <code>/data/ccc/ADR/logs/solo5_pairwise_rank_w005_after_asl_20260625_164359.log</code>。</p>
+      <p><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" --run_name solo5_pairwise_rank_w005_after_asl --epochs 5 --batch_size 256 --test_batch_size 512 --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm --use_pairwise_ranking_loss --pairwise_rank_weight 0.05 --pairwise_rank_margin 0.0 --pairwise_rank_max_pairs 16384</code></p>
+      <p>Score-level graph-prior fusion 现在可以通过增强版 <code>evaluate_prediction_ensemble.py</code> 扫权重和阈值；这个方向已有 5-epoch 正证据，属于比纯新想法更值得优先验证的 fallback。</p>
+      <p>新增 <code>--score_transform rank</code> 后，rank-normalized fusion 在 leave-one-fold 验证中达到 AUC 0.91379、AUPR 0.90936、ACC 0.83586、MCC 0.67173，且不需要阈值调参。</p>
+      <p>进一步两两筛选后，<code>D4 similarity-negative + graph-prior</code> 的 rank fusion 一度成为最强 5-epoch fold-local fusion 候选：AUC 0.91717、AUPR 0.91298、ACC 0.84009、MCC 0.68020，且 leave-one-fold 中每折都选 D4 weight 0.45。</p>
+      <div class="callout">
+        <strong>新增已验证 screen：fold-local ADR label-correlation residual</strong>
+        ADR 标签相关性残差已经完成第一轮离线筛查：只用训练折正样本构建 ADR Jaccard 共现，用同一药物的已知 ADR profile 对候选 ADR 做 top-3 mean 支持评分，再做 per-fold rank transform。结果为 AUC 0.91483、AUPR 0.91469、ACC 0.84215、MCC 0.68429。
+      </div>
+      <p>配套安全修复已经完成：未来 <code>testdata_fold*.pkl</code> 会保存 <code>drug_id</code> 和 <code>side_id</code>，<code>evaluate_prediction_ensemble.py</code> 在有样本 ID 时按 <code>(drug_id, side_id)</code> 对齐；旧结果仍走严格 label-order fallback。远端兼容验证复现了 D4+graph rank fusion 的 AUC 0.91717、AUPR 0.91298、ACC 0.84009、MCC 0.68020。</p>
+      <p>和 5-epoch fold-local base 相比，label-correlation residual 提升 AUC +0.00381、AUPR +0.00811、ACC +0.01328、MCC +0.02321。和 D4+graph rank fusion 相比，它的 AUC 低 0.00234，但 AUPR 高 0.00171、ACC 高 0.00206、MCC 高 0.00409。因此它现在是最高优先级的下一步 fusion 目标，而不是最终 30-epoch 主结论。</p>
+      <p>双结构 residual sweep 又把该方向推进了一点：drug-neighbor residual 单独较弱，但加入少量 drug-neighbor rank residual 后，<code>label 0.90 + drug 0.10</code> 达到 AUC 0.91567、AUPR 0.91531、ACC 0.84544、MCC 0.69090。进一步的 leave-one-fold 权重选择保持了 AUC 0.91557、AUPR 0.91529、ACC 0.84473、MCC 0.68948，说明它不是单纯 evaluated-fold 调权重的产物。</p>
+      <p>最新 top-k sweep 显示，ADR profile 不是只看最接近的 3 个标签最好，而是 <code>top-k=10</code> 最强。<code>label 0.95 + drug 0.05, top-k=10</code> 在 leave-one-fold 权重选择下达到 AUC 0.91755、AUPR 0.91818、ACC 0.84595、MCC 0.69191，已经超过 D4+graph rank fusion 的四个指标。它现在是最高优先级的 sample-ID-aligned fusion 目标。</p>
+      <p>进一步的结构源 sweep 显示，非对称条件共现 <code>P(candidate ADR | known ADR)</code> 比 Jaccard 更适合本任务。<code>conditional top-k=8 + 5% drug residual</code> 达到 AUC 0.92099、AUPR 0.92284、ACC 0.85211、MCC 0.70422，是 top-k mean 聚合下的最强 strict 5-epoch fold-local 结构候选。Lift 共现源表现很差，作为负向消融保留。</p>
+      <p>进一步的聚合方式筛选显示，<code>topk_noisy_or</code> 比 top-k mean 更能表达多个已知 ADR 对候选 ADR 的累积支持。<code>conditional top-k noisy-or, top-k=10 + 5% drug residual</code> 达到 AUC 0.92356、AUPR 0.92552、ACC 0.85439、MCC 0.70879；继续扫 top-k 后，<code>top-k=12</code> 达到 AUC 0.92394、AUPR 0.92559、ACC 0.85476、MCC 0.70952。把小比例 drug residual 从 <code>max</code> 改为 <code>mean</code> 后，balanced residual screen 达到 AUC 0.92400、AUPR 0.92558、ACC 0.85565、MCC 0.71132。进一步用其他四折选择 MCC 阈值后，达到 AUC 0.92398、AUPR 0.92557、ACC 0.85582、MCC 0.71166；这是很小的 decision-layer 辅助收益，不是训练好的 DGAPred 主结果，下一步必须看 model-integrated prior。</p>
+      <p>新的低成本筛查显示，外部 ADR 语义相似度不能单独替代条件依赖：MESH-only 只有 AUC 0.81411、AUPR 0.80369，GDA-only 只有 AUC 0.74975、AUPR 0.67501。但把少量 MESH/GDA 作为 conditional residual 的补充是有效的：<code>90% conditional + 5% MESH + 5% GDA</code> 达到 AUC 0.92613、AUPR 0.92610，是当前最强 residual ranking screen。它的 MCC 低于 best decision-layer residual，因此应定位为 ranking-metric 候选。</p>
+      <p>进一步落地：<code>main.py</code> 已新增 <code>--use_label_corr_prior</code>，并支持 <code>--label_corr_drug_mix_weight</code>、<code>--label_corr_source conditional</code> 和 <code>--label_corr_prior_combine topk_noisy_or</code>。conditional top-k 8 model-integrated prior 已排队；top-k noisy-or top-k 10 已排队为 <code>solo5_conditional_topknoisyor_prior_topk10_mix005_after_conditional</code>，wrapper PID <code>1062495</code>；top-k 12 drug-max 已排队为 <code>solo5_conditional_topknoisyor_prior_topk12_mix005_after_topk10</code>，wrapper PID <code>1074147</code>；top-k 12 drug-mean 已排队为 <code>solo5_conditional_topknoisyor_prior_topk12_drugmean_mix005_after_topk12max</code>，wrapper PID <code>1093861</code>。此外，离线 residual evaluator 会对 ADR 相关矩阵做 min-max 归一化，<code>main.py</code> 已补充 <code>--label_corr_matrix_transform minmax</code>，并排队一致性验证 <code>solo5_conditional_topknoisyor_prior_topk12_drugmean_minmax_mix005_after_drugmean</code>，wrapper PID <code>1105618</code>。在结果完成前，它们仍是 pending branch。</p>
+      <p>文献锚点：<a href="https://arxiv.org/abs/2009.14119">Asymmetric Loss For Multi-Label Classification</a>、<a href="https://arxiv.org/abs/2007.09654">Distribution-Balanced Loss for Multi-Label Classification in Long-Tailed Datasets</a>、<a href="https://arxiv.org/abs/2007.00224">Debiased Contrastive Learning</a>、<a href="https://arxiv.org/abs/2010.11711">MIRACLE: Multi-view Graph Contrastive Representation Learning for Drug-Drug Interaction Prediction</a>、<a href="https://arxiv.org/abs/2308.00279">Robust Positive-Unlabeled Learning via Noise Negative Sample Self-correction</a>。</p>
+    </section>
 
     <section>
       <h2>一、执行摘要</h2>
@@ -234,6 +310,20 @@
           <tr><td>Low-weight graph prior</td><td>5</td><td>0.90755</td><td>0.90026</td><td>0.83020</td><td>0.66051</td><td>早停负向筛选：降低权重削弱了图先验信号。</td></tr>
           <tr><td>Mean graph prior</td><td>5</td><td>0.90724</td><td>0.90023</td><td>0.82657</td><td>0.65638</td><td>早停负向筛选：mean 聚合低于 base。</td></tr>
           <tr><td>Base + graph score ensemble</td><td>5</td><td>0.91368</td><td>0.90930</td><td>0.83054</td><td>0.66465</td><td><span class="good">当前最有希望的新证据</span>；0.5/0.5 分数平均，全指标高于 5 epoch base。</td></tr>
+          <tr><td>Weight-swept base + graph score fusion</td><td>5</td><td>0.91399</td><td>0.90956</td><td>0.83026</td><td>0.66435</td><td>固定 0.5 阈值；best AUPR at base weight 0.30，优于原 0.5/0.5 fusion 的 AUC/AUPR。</td></tr>
+          <tr><td>Calibrated weight-swept score fusion</td><td>5</td><td>0.91399</td><td>0.90956</td><td>0.83697</td><td>0.67429</td><td>早期 score-fusion 强候选；base weight 0.30，fold-wise MCC threshold calibration。</td></tr>
+          <tr><td>Leave-one-fold selected score fusion</td><td>5</td><td>0.91377</td><td>0.90931</td><td>0.82887</td><td>0.66195</td><td>用其他折选权重后评估 held-out fold；确认 AUC/AUPR 排序收益稳健。</td></tr>
+          <tr><td>Leave-one-fold calibrated fusion</td><td>5</td><td>0.91399</td><td>0.90956</td><td>0.82539</td><td>0.65856</td><td>权重稳定为 0.30，但跨折阈值迁移削弱 ACC/MCC；不能作为阈值指标主证据。</td></tr>
+          <tr><td>Rank-normalized score fusion</td><td>5</td><td>0.91398</td><td>0.90956</td><td>0.83599</td><td>0.67198</td><td>固定阈值；base weight 0.30，接近 calibrated 上界但不依赖阈值调参。</td></tr>
+          <tr><td>Leave-one-fold rank-normalized fusion</td><td>5</td><td>0.91379</td><td>0.90936</td><td>0.83586</td><td>0.67173</td><td><span class="good">当前最稳 5-epoch fusion 候选</span>；其他折选权重，held-out fold 固定阈值评估。</td></tr>
+          <tr><td>D4-negative + graph rank fusion</td><td>5</td><td>0.91717</td><td>0.91298</td><td>0.84009</td><td>0.68020</td><td>强 fusion 候选；rank fusion，固定阈值，不依赖阈值调参。</td></tr>
+          <tr><td>Calibrated D4-negative + graph rank fusion</td><td>5</td><td>0.91717</td><td>0.91298</td><td>0.84144</td><td>0.68334</td><td>校准上界；主证据仍以固定阈值 leave-one-fold 为准。</td></tr>
+          <tr><td>Dual structural residual</td><td>5</td><td>0.91567</td><td>0.91531</td><td>0.84544</td><td>0.69090</td><td>label 0.90 + drug 0.10 rank residual；早期强 AUPR/ACC/MCC 结构 residual screen。</td></tr>
+          <tr><td>LOO dual structural residual</td><td>5</td><td>0.91557</td><td>0.91529</td><td>0.84473</td><td>0.68948</td><td><span class="good">严格权重选择验证</span>；其他折选权重后 held-out fold 评估，仍高于 D4+graph 的 AUPR/ACC/MCC。</td></tr>
+          <tr><td>Tuned-topk dual structural residual</td><td>5</td><td>0.91755</td><td>0.91818</td><td>0.84595</td><td>0.69191</td><td>Jaccard 源下最强严格 5-epoch fold-local 候选；top-k 10，LOO 权重选择，四项指标均高于 D4+graph rank fusion。</td></tr>
+          <tr><td>Conditional dual structural residual</td><td>5</td><td>0.92099</td><td>0.92284</td><td>0.85211</td><td>0.70422</td><td><span class="good">新的最强结构候选</span>；非对称条件共现 top-k 8，四项指标显著高于 D4+graph rank fusion。</td></tr>
+          <tr><td>Conditional top-k noisy-or residual + MCC threshold</td><td>5</td><td>0.92398</td><td>0.92557</td><td>0.85582</td><td>0.71166</td><td><span class="good">当前最佳 decision-layer residual screen</span>；其他折选阈值，平均 threshold 0.505。仍需 model-integrated 验证。</td></tr>
+          <tr><td>Semantic-augmented conditional residual</td><td>5</td><td>0.92613</td><td>0.92610</td><td>0.85520</td><td>0.71042</td><td><span class="good">当前最佳 ranking residual screen</span>；90% conditional + 5% MESH + 5% GDA。仍需 model-integrated 实现与验证。</td></tr>
           <tr><td>Base + graph score ensemble</td><td>30</td><td>0.93019</td><td>0.92598</td><td>0.85695</td><td>0.71393</td><td>仅 3/5 折；在可用折上高于 base 与 graph standalone partial mean，需完整验证。</td></tr>
           <tr><td>Graph prior retry for ensemble</td><td>30</td><td colspan="4">已终止</td><td>重跑在 fold 1 epoch 3 后无日志更新且 GPU 0%，与前一次长训卡住模式一致；30 epoch ensemble 暂时只能作为 3 折部分证据。</td></tr>
         </tbody>

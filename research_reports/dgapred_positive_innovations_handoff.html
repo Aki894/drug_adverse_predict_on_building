@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DGAPred Positive Innovation Handoff</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d8dee7;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --core: #0b6b5f;
+      --aux: #6a4c93;
+      --warn: #9a5a00;
+      --code: #111827;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.58;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    h2 { margin: 34px 0 14px; font-size: 22px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+    h3 { margin: 24px 0 10px; font-size: 18px; }
+    p { margin: 8px 0; }
+    .meta, .note { color: var(--muted); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin: 14px 0;
+    }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      margin-right: 6px;
+      vertical-align: 1px;
+    }
+    .core { background: var(--core); }
+    .aux { background: var(--aux); }
+    .warn { background: var(--warn); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th { background: #edf1f7; }
+    tr:last-child td { border-bottom: 0; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #eef2f7;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    pre {
+      margin: 10px 0 16px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      color: #e5e7eb;
+      background: var(--code);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.48;
+    }
+    pre code { background: transparent; color: inherit; padding: 0; }
+    ul { padding-left: 22px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>DGAPred 正向创新点与长线实验交接</h1>
+  <p class="meta">生成日期：2026-06-28。服务器约定：从 <code>/data/ccc/ADR</code> 运行，Python 使用 <code>/root/miniconda3/envs/adr/bin/python</code>。</p>
+
+  <section class="card">
+    <h2>结论摘要</h2>
+    <p>当前最值得交给服务器长线验证的主线不是另起一个全新的大改模型，而是把已经离线筛出稳定正向信号的 <strong>directional conditional ADR dependency prior</strong> 做成完整 DGAPred integrated prior 实验。</p>
+    <p>方法核心是只用训练折正样本构造 <code>P(candidate ADR | known ADR)</code>，对同一 drug 已知 ADR profile 给候选 ADR 提供方向性支持，并用 <code>top-k noisy-or</code> 聚合多条 ADR 依赖证据。5% drug-neighbor residual 是轻量增强；semantic MESH/GDA 是 ranking extension；MCC threshold transfer 是 decision-layer 辅助，不建议包装成主创新。</p>
+  </section>
+
+  <section class="card">
+    <h2>本地正向结果的 baseline 口径</h2>
+    <p>下面的正向结果来自本地 5-fold residual screen，用于筛选方向，不等同于 30 epoch integrated DGAPred 最终结论。所有 residual 先验都只用对应训练折正样本构造，再在 held-out fold 上评估；这是判断“是否值得上服务器长线实验”的低成本口径。</p>
+    <table>
+      <thead>
+        <tr>
+          <th>参照项</th>
+          <th>Epochs</th>
+          <th>AUC</th>
+          <th>AUPR</th>
+          <th>ACC</th>
+          <th>MCC</th>
+          <th>用途</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Fold-local base</td>
+          <td>5</td>
+          <td>0.91102</td>
+          <td>0.90658</td>
+          <td>0.82887</td>
+          <td>0.66108</td>
+          <td>本地 residual screen 的主要 baseline，用于衡量结构先验是否有正向信号。</td>
+        </tr>
+        <tr>
+          <td>D4 similarity-negative + graph-prior rank fusion</td>
+          <td>5</td>
+          <td>0.91717</td>
+          <td>0.91298</td>
+          <td>0.84009</td>
+          <td>0.68020</td>
+          <td>上一轮较强短训 fusion 参照；conditional structural residual 后续应至少在 AUPR/ACC/MCC 上超过它。</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>当前 best non-semantic residual screen 为 AUC 0.92400、AUPR 0.92558、ACC 0.85565、MCC 0.71132；相对 fold-local base 分别为 +0.01298、+0.01900、+0.02678、+0.05024，相对 D4+graph rank fusion 也全指标更高。正式论文指标仍必须以服务器 30 epoch integrated run 为准。</p>
+  </section>
+
+  <h2>创新点优先级</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>优先级</th>
+        <th>创新点</th>
+        <th>定位</th>
+        <th>当前证据</th>
+        <th>论文写法建议</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Directional conditional ADR dependency prior</td>
+        <td><span class="tag core">Core</span>主创新</td>
+        <td>label-only residual 已有正向信号；top-k noisy-or + drug mean residual 达到 AUC 0.92400、AUPR 0.92558、ACC 0.85565、MCC 0.71132。</td>
+        <td>可写成“fold-local directional label dependency prior”，强调方向性、训练折内构造、与 DGAPred pair representation 的融合。</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Small drug-neighbor residual refinement</td>
+        <td><span class="tag aux">Refinement</span>轻量结构增强</td>
+        <td>在 conditional label prior 之上用 0.05 mix weight 稳定提升 fixed-threshold 和 MCC-threshold 指标。</td>
+        <td>作为主方法的一个局部增强模块，不宜单独声称为第二个主创新。</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Semantic-augmented conditional hybrid prior</td>
+        <td><span class="tag aux">Extension</span>ranking 扩展</td>
+        <td>conditional/MESH/GDA = 0.90/0.06/0.04 residual screen 达到 AUC 0.92648、AUPR 0.92642，但 MCC 低于 non-semantic best。</td>
+        <td>适合写成“semantic support improves ranking metrics”，等待 integrated run 决定是否进入主表。</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Leave-one-fold MCC threshold transfer</td>
+        <td><span class="tag aux">Auxiliary</span>决策层辅助</td>
+        <td>best non-semantic residual 达到 AUC 0.92398、AUPR 0.92557、ACC 0.85582、MCC 0.71166。</td>
+        <td>只能作为 threshold selection/decision protocol，不应包装成模型结构创新。</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>ASL classification loss / pairwise ranking auxiliary loss</td>
+        <td><span class="tag warn">Backup</span>备线</td>
+        <td>代码已实现，但目前优先级低于 structural prior chain。</td>
+        <td>若 integrated prior 长线失败，再作为 loss-level baseline 或补充消融。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>代码改动入口</h2>
+  <ul>
+    <li><code>pythonPredict/DGAPred(Compare)/src/main.py</code>：新增 ASL、pairwise ranking loss、fold-local label correlation prior 计算、integrated prior 注入、相关 CLI 参数。</li>
+    <li><code>pythonPredict/DGAPred(Compare)/src/model/model.py</code>：扩展模型 forward/representation 以支持 pair-level prior 融合。</li>
+    <li><code>pythonPredict/DGAPred(Compare)/src/evaluate_prediction_ensemble.py</code>：支持 sample-ID aligned fusion、rank/minmax score transform、weight sweep、leave-one-fold threshold calibration。</li>
+    <li><code>pythonPredict/DGAPred(Compare)/src/evaluate_label_correlation_residual.py</code>：新增离线 residual sanity-check 工具，用于快速筛选 label/drug/semantic prior 组合。</li>
+  </ul>
+
+  <h2>服务器运行约定</h2>
+  <pre><code>ssh server-NER
+cd /data/ccc/ADR
+/root/miniconda3/envs/adr/bin/python -V</code></pre>
+  <p>建议先跑 5 epoch smoke test，确认数据路径、GPU、依赖和输出目录正常，再跑 30 epoch 长线验证。以下命令都应从 <code>/data/ccc/ADR</code> 执行。</p>
+
+  <h2>推荐长线实验命令</h2>
+
+  <h3>1. Core label-only directional prior</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditional_labelonly_topknoisyor12_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 12 \
+  --label_corr_drug_mix_weight 0.0 \
+  --label_corr_score_transform rank</code></pre>
+
+  <h3>2. Best balanced non-semantic prior</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditional_topknoisyor12_drugmean_mix005_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 12 \
+  --label_corr_drug_mix_weight 0.05 \
+  --label_corr_drug_combine mean \
+  --label_corr_score_transform rank</code></pre>
+
+  <h3>3. Top-k 10 transfer check</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditional_topknoisyor10_drugmax_mix005_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 10 \
+  --label_corr_drug_mix_weight 0.05 \
+  --label_corr_drug_combine max \
+  --label_corr_score_transform rank</code></pre>
+
+  <h3>4. Matrix-minmax protocol-consistency ablation</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditional_topknoisyor12_drugmean_mix005_matrixminmax_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 12 \
+  --label_corr_drug_mix_weight 0.05 \
+  --label_corr_drug_combine mean \
+  --label_corr_score_transform rank \
+  --label_corr_matrix_transform minmax</code></pre>
+
+  <h3>5. Semantic extension, balanced</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditionalhybrid_c90_m05_g05_topknoisyor12_drugmean_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional_hybrid \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 12 \
+  --label_corr_drug_mix_weight 0.05 \
+  --label_corr_drug_combine mean \
+  --label_corr_score_transform rank \
+  --label_corr_cooccur_weight 0.90 \
+  --label_corr_mesh_weight 0.05 \
+  --label_corr_gda_weight 0.05</code></pre>
+
+  <h3>6. Semantic extension, current best ranking screen</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_conditionalhybrid_c90_m06_g04_topknoisyor12_drugmean_rank \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_label_corr_prior \
+  --label_corr_source conditional_hybrid \
+  --label_corr_prior_weight 0.5 \
+  --label_corr_prior_combine topk_noisy_or \
+  --label_corr_topk 12 \
+  --label_corr_drug_mix_weight 0.05 \
+  --label_corr_drug_combine mean \
+  --label_corr_score_transform rank \
+  --label_corr_cooccur_weight 0.90 \
+  --label_corr_mesh_weight 0.06 \
+  --label_corr_gda_weight 0.04</code></pre>
+
+  <h2>快速 smoke test 模板</h2>
+  <p>将上面的任一长线命令中的 <code>--epochs 30</code> 改成 <code>--epochs 5</code>，并把 <code>--run_name</code> 前缀从 <code>e30_</code> 改成 <code>smoke5_</code>。smoke test 只验证流程可跑和指标方向，不作为论文最终数值。</p>
+
+  <h2>备线实验命令</h2>
+  <h3>ASL classification loss</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_asl_gn4_clip005 \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --classification_loss asl --asl_gamma_neg 4.0 --asl_clip 0.05</code></pre>
+
+  <h3>Pairwise ranking auxiliary loss</h3>
+  <pre><code>/root/miniconda3/envs/adr/bin/python -u "pythonPredict/DGAPred(Compare)/src/main.py" \
+  --run_name e30_pairwise_rank_w005 \
+  --epochs 30 --batch_size 256 --test_batch_size 512 \
+  --torch_threads 4 --torch_interop_threads 1 --no-pin_memory --disable_tqdm \
+  --use_pairwise_ranking_loss \
+  --pairwise_rank_weight 0.05 \
+  --pairwise_rank_margin 0.0 \
+  --pairwise_rank_max_pairs 16384</code></pre>
+
+  <h2>可选 CPU sanity check</h2>
+  <pre><code>/root/miniconda3/envs/adr/bin/python "pythonPredict/DGAPred(Compare)/src/evaluate_label_correlation_residual.py" \
+  --similarity_path pythonPredict \
+  --mode fuse --source conditional \
+  --aggregation topk_noisy_or --label_topk 12 \
+  --drug_aggregation mean \
+  --score_transform rank \
+  --weight_label 0.95 \
+  --folds 5</code></pre>
+
+  <h2>结果判读门槛</h2>
+  <ul>
+    <li>若 <code>e30_conditional_topknoisyor12_drugmean_mix005_rank</code> 相对原 DGAPred baseline 在 AUPR/MCC 上稳定正向，可作为主论文方法。</li>
+    <li>若 label-only 已正向、drug residual 继续提升，可把“方向性 ADR dependency”作为主创新，把 drug residual 写成 refinement。</li>
+    <li>若 semantic hybrid 只提升 AUC/AUPR、MCC 不升，放入 ranking-metric extension 或 ablation，不强行作为主方法。</li>
+    <li>若 integrated prior 不如 residual screen，优先检查 prior 注入权重、rank transform、一致的 fold-local 构造和 baseline 协议，再考虑启用 ASL/pairwise 备线。</li>
+  </ul>
+
+</main>
+</body>
+</html>

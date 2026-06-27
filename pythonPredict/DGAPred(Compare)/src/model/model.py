@@ -199,6 +199,14 @@ class DGAPred(nn.Module):
                  n_drug_chunks: int = 2, n_side_chunks: int = 2,
                  use_feature_interaction: bool = True,
                  use_contrastive_learning: bool = True,
+                 use_structured_contrastive_views: bool = False,
+                 use_structured_view_dropout: bool = False,
+                 use_hybrid_structured_noise_views: bool = False,
+                 use_structured_view_curriculum: bool = False,
+                 structured_view_curriculum_start_epoch: int = 6,
+                 structured_view_dropout_prob: float = 0.5,
+                 structured_view_dropout_views: int = 2,
+                 structured_view_dropout_min_keep: int = 1,
                  contrastive_loss_type: str = "standard",
                  d4_tau_plus: float = 0.1):
         """Initialize DGAPred model.
@@ -214,6 +222,14 @@ class DGAPred(nn.Module):
             n_side_chunks: Number of chunks for side effect features
             use_feature_interaction: Whether to use feature interaction attention
             use_contrastive_learning: Whether to use contrastive learning
+            use_structured_contrastive_views: Whether to use masked structural views instead of only noisy fused views
+            use_structured_view_dropout: Whether to add stochastic sub-structure masked views
+            use_hybrid_structured_noise_views: Whether to keep one noisy full-view augmentation alongside structured views
+            use_structured_view_curriculum: Whether to delay structured views until later epochs
+            structured_view_curriculum_start_epoch: Epoch to switch from noisy full-view to structured views
+            structured_view_dropout_prob: Drop probability for each sub-structure in stochastic views
+            structured_view_dropout_views: Number of stochastic masked views per batch
+            structured_view_dropout_min_keep: Minimum number of kept sub-structures in each stochastic view
             contrastive_loss_type: 对比损失类型，standard或debiased
             d4_tau_plus: DCL假阴性比例先验
         """
@@ -236,6 +252,14 @@ class DGAPred(nn.Module):
         # 高级模块开关
         self.use_feature_interaction = use_feature_interaction
         self.use_contrastive_learning = use_contrastive_learning
+        self.use_structured_contrastive_views = use_structured_contrastive_views
+        self.use_structured_view_dropout = use_structured_view_dropout
+        self.use_hybrid_structured_noise_views = use_hybrid_structured_noise_views
+        self.use_structured_view_curriculum = use_structured_view_curriculum
+        self.structured_view_curriculum_start_epoch = structured_view_curriculum_start_epoch
+        self.structured_view_dropout_prob = structured_view_dropout_prob
+        self.structured_view_dropout_views = structured_view_dropout_views
+        self.structured_view_dropout_min_keep = structured_view_dropout_min_keep
         
         # ----------------------------------------------------------------
         # 全局特征编码层
@@ -345,6 +369,38 @@ class DGAPred(nn.Module):
         self.total_layer = nn.Linear(total_input_dim, self.channel_size * 4)
         self.classifier2 = nn.Linear(self.channel_size * 4, 1)  # Outputs logits
         self.con_layer = nn.Linear(self.channel_size * 4, 1)
+
+    def _build_stochastic_structured_views(self, components: tuple) -> list:
+        """Sample extra masked structural views for harder multi-view alignment."""
+        if not self.use_structured_view_dropout or self.structured_view_dropout_views <= 0:
+            return []
+
+        n_parts = len(components)
+        keep_prob = 1.0 - float(self.structured_view_dropout_prob)
+        min_keep = max(1, min(int(self.structured_view_dropout_min_keep), n_parts - 1))
+        device = components[0].device
+        sampled_views = []
+
+        for _ in range(int(self.structured_view_dropout_views)):
+            mask = None
+            for _retry in range(8):
+                candidate = torch.bernoulli(
+                    torch.full((n_parts,), keep_prob, device=device)
+                )
+                keep_count = int(candidate.sum().item())
+                if min_keep <= keep_count <= n_parts - 1:
+                    mask = candidate
+                    break
+            if mask is None:
+                mask = torch.zeros(n_parts, device=device)
+                keep_indices = torch.randperm(n_parts, device=device)[:min_keep]
+                mask[keep_indices] = 1.0
+
+            sampled_views.append(torch.cat([
+                component * mask[idx] for idx, component in enumerate(components)
+            ], dim=1))
+
+        return sampled_views
 
 
     def forward(self, drug_indices: torch.Tensor, side_indices: torch.Tensor, 
@@ -496,10 +552,37 @@ class DGAPred(nn.Module):
         total = torch.cat((x_drugs_embed, h, x_sides_embed), dim=1)
         contrastive_loss = None  # 初始化变量
         if self.use_contrastive_learning and self.training:
-            # 构造带轻微噪声的增强视图，用于和融合表示做对比学习。
-            noise = torch.randn_like(total)
-            total_noise = total + torch.sign(total) * F.normalize(noise, dim=-1) * 0.1
-            total_views = [total_noise]
+            use_structured_views_now = self.use_structured_contrastive_views
+            if self.use_structured_view_curriculum:
+                use_structured_views_now = (
+                    self.use_structured_contrastive_views
+                    and epoch >= int(self.structured_view_curriculum_start_epoch)
+                )
+
+            if use_structured_views_now:
+                # 用结构化遮挡视图替代单纯噪声扰动，让对比学习显式看到
+                # drug / interaction / side 三部分在缺失某一子结构时的互补关系。
+                zero_drug = torch.zeros_like(x_drugs_embed)
+                zero_h = torch.zeros_like(h)
+                zero_side = torch.zeros_like(x_sides_embed)
+                total_views = [
+                    torch.cat((x_drugs_embed, h, zero_side), dim=1),
+                    torch.cat((zero_drug, h, x_sides_embed), dim=1),
+                    torch.cat((x_drugs_embed, zero_h, x_sides_embed), dim=1)
+                ]
+                if self.use_hybrid_structured_noise_views:
+                    noise = torch.randn_like(total)
+                    total_views.append(
+                        total + torch.sign(total) * F.normalize(noise, dim=-1) * 0.1
+                    )
+                total_views.extend(
+                    self._build_stochastic_structured_views((x_drugs_embed, h, x_sides_embed))
+                )
+            else:
+                # 构造带轻微噪声的增强视图，用于和融合表示做对比学习。
+                noise = torch.randn_like(total)
+                total_noise = total + torch.sign(total) * F.normalize(noise, dim=-1) * 0.1
+                total_views = [total_noise]
             
             # 根据开关选择标准 InfoNCE 或 D4 去偏 InfoNCE。
             contrastive_loss = self.contrastive_module(

@@ -19,6 +19,7 @@ import pandas as pd
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils.data
 
 from sklearn import metrics
@@ -62,6 +63,51 @@ def get_d4_contrastive_weight(epoch, args):
         return args.contrastive_weight
     warmup_epochs = max(1, int(args.d4_warmup_epochs))
     return args.contrastive_weight * min(1.0, epoch / warmup_epochs)
+
+
+def asymmetric_loss_with_logits(logits, targets, args):
+    """ASL-style classification loss for sparse positive-observed ADR labels."""
+    probs = torch.sigmoid(logits)
+    targets = targets.to(logits.device)
+    anti_targets = 1.0 - targets
+
+    xs_pos = probs
+    xs_neg = 1.0 - probs
+    if args.asl_clip > 0:
+        xs_neg = (xs_neg + float(args.asl_clip)).clamp(max=1.0)
+
+    eps = 1e-8
+    loss = targets * torch.log(xs_pos.clamp(min=eps))
+    loss = loss + anti_targets * torch.log(xs_neg.clamp(min=eps))
+
+    gamma_pos = float(args.asl_gamma_pos)
+    gamma_neg = float(args.asl_gamma_neg)
+    if gamma_pos > 0 or gamma_neg > 0:
+        pt = xs_pos * targets + xs_neg * anti_targets
+        gamma = gamma_pos * targets + gamma_neg * anti_targets
+        loss = loss * torch.pow((1.0 - pt).clamp(min=eps), gamma)
+
+    return -loss
+
+
+def pairwise_ranking_loss(logits, labels, args):
+    """Batch-wise positive-vs-negative ranking loss aligned with AUC/AUPR."""
+    labels = labels.to(logits.device)
+    pos_scores = logits[labels > 0.5]
+    neg_scores = logits[labels <= 0.5]
+    if pos_scores.numel() == 0 or neg_scores.numel() == 0:
+        return logits.new_tensor(0.0)
+
+    max_pairs = int(args.pairwise_rank_max_pairs)
+    if max_pairs > 0 and pos_scores.numel() * neg_scores.numel() > max_pairs:
+        pair_count = min(max_pairs, pos_scores.numel() * neg_scores.numel())
+        pos_idx = torch.randint(pos_scores.numel(), (pair_count,), device=logits.device)
+        neg_idx = torch.randint(neg_scores.numel(), (pair_count,), device=logits.device)
+        margins = pos_scores[pos_idx] - neg_scores[neg_idx]
+    else:
+        margins = pos_scores.view(-1, 1) - neg_scores.view(1, -1)
+
+    return F.softplus(float(args.pairwise_rank_margin) - margins).mean()
 
 
 def build_d4_drug_similarity(drug_features):
@@ -259,6 +305,132 @@ def compute_fold_graph_prior_scores(samples, fold_train, drug_features, side_fea
 
     combined = np.maximum.reduce(priors) if args.graph_prior_combine == 'max' else np.mean(priors, axis=0)
     return np.clip(np.nan_to_num(combined, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
+
+
+def rank_percentile(scores):
+    order = np.argsort(scores, kind="mergesort")
+    ranks = np.empty_like(order, dtype=np.float32)
+    ranks[order] = np.arange(len(scores), dtype=np.float32)
+    if len(scores) <= 1:
+        return np.zeros_like(scores, dtype=np.float32)
+    return ranks / float(len(scores) - 1)
+
+
+def minmax_matrix(matrix):
+    matrix = np.nan_to_num(np.asarray(matrix, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    min_value = float(np.min(matrix))
+    max_value = float(np.max(matrix))
+    return (matrix - min_value) / (max_value - min_value + 1e-12)
+
+
+def compute_label_corr_prior_scores(samples, fold_train, DAL, args, drug_features=None, side_features=None):
+    """用训练折ADR共现关系，为drug-ADR pair构造fold-local标签相关性先验。"""
+    samples = np.asarray(samples)
+    fold_train = np.asarray(fold_train)
+    positive_train = fold_train[fold_train[:, 2] > 0, :3]
+    if len(samples) == 0 or len(positive_train) == 0:
+        return np.zeros(len(samples), dtype=np.float32)
+
+    n_drugs, n_sides = np.asarray(DAL).shape
+    profile = np.zeros((n_drugs, n_sides), dtype=np.float32)
+    profile[positive_train[:, 0].astype(int), positive_train[:, 1].astype(int)] = 1.0
+
+    intersect = profile.T @ profile
+    side_support = np.diag(intersect)
+    smooth = float(args.label_corr_smooth)
+    if args.label_corr_source in ('conditional', 'conditional_hybrid'):
+        corr = (intersect + smooth) / (side_support[None, :] + smooth * n_sides + 1e-12)
+    else:
+        union = side_support[:, None] + side_support[None, :] - intersect
+        corr = (intersect + smooth) / (union + smooth + 1e-12)
+    np.fill_diagonal(corr, 0.0)
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    if args.label_corr_source == 'conditional_hybrid':
+        if side_features is None or len(side_features) < 2:
+            raise ValueError("side_features with MESH and GDA matrices are required for conditional_hybrid")
+        conditional_corr = minmax_matrix(corr)
+        mesh_corr = minmax_matrix(side_features[0])
+        gda_corr = minmax_matrix(side_features[1])
+        corr = minmax_matrix(
+            float(args.label_corr_cooccur_weight) * conditional_corr
+            + float(args.label_corr_mesh_weight) * mesh_corr
+            + float(args.label_corr_gda_weight) * gda_corr
+        )
+        np.fill_diagonal(corr, 0.0)
+    if args.label_corr_matrix_transform == 'minmax':
+        corr = minmax_matrix(corr)
+        np.fill_diagonal(corr, 0.0)
+
+    side_ids = samples[:, 1].astype(int)
+    drug_ids = samples[:, 0].astype(int)
+    label_prior = np.zeros(len(samples), dtype=np.float32)
+    topk = max(1, int(args.label_corr_topk))
+
+    for drug_idx in np.unique(drug_ids):
+        known_sides = np.flatnonzero(profile[drug_idx] > 0)
+        if len(known_sides) == 0:
+            continue
+        sample_idx = np.flatnonzero(drug_ids == drug_idx)
+        values = corr[side_ids[sample_idx]][:, known_sides]
+        if args.label_corr_prior_combine == 'max':
+            label_prior[sample_idx] = values.max(axis=1)
+        elif args.label_corr_prior_combine == 'mean':
+            label_prior[sample_idx] = values.mean(axis=1)
+        elif args.label_corr_prior_combine == 'topk_mean':
+            k = min(topk, values.shape[1])
+            label_prior[sample_idx] = np.sort(values, axis=1)[:, -k:].mean(axis=1)
+        elif args.label_corr_prior_combine == 'noisy_or':
+            probs = np.clip(values, 0.0, 1.0)
+            label_prior[sample_idx] = 1.0 - np.prod(1.0 - probs, axis=1)
+        elif args.label_corr_prior_combine == 'topk_noisy_or':
+            k = min(topk, values.shape[1])
+            probs = np.clip(np.sort(values, axis=1)[:, -k:], 0.0, 1.0)
+            label_prior[sample_idx] = 1.0 - np.prod(1.0 - probs, axis=1)
+        else:
+            raise ValueError(f"Unknown label_corr_prior_combine: {args.label_corr_prior_combine}")
+
+    label_prior = np.clip(np.nan_to_num(label_prior, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+    if args.label_corr_score_transform == 'rank':
+        label_prior = rank_percentile(label_prior)
+
+    drug_mix_weight = float(args.label_corr_drug_mix_weight)
+    if drug_mix_weight <= 0 or drug_features is None:
+        return label_prior.astype(np.float32)
+
+    drug_sim = build_d4_drug_similarity(drug_features)
+    drug_prior = np.zeros(len(samples), dtype=np.float32)
+    drug_topk = max(1, int(args.label_corr_drug_topk))
+
+    for side_idx in np.unique(side_ids):
+        positive_drugs = positive_train[positive_train[:, 1].astype(int) == side_idx, 0].astype(int)
+        if len(positive_drugs) == 0:
+            continue
+        sample_idx = np.flatnonzero(side_ids == side_idx)
+        values = drug_sim[drug_ids[sample_idx]][:, positive_drugs]
+        if args.label_corr_drug_combine == 'mean':
+            drug_prior[sample_idx] = values.mean(axis=1)
+        elif args.label_corr_drug_combine == 'topk_mean':
+            k = min(drug_topk, values.shape[1])
+            drug_prior[sample_idx] = np.sort(values, axis=1)[:, -k:].mean(axis=1)
+        elif args.label_corr_drug_combine == 'noisy_or':
+            probs = np.clip(values, 0.0, 1.0)
+            drug_prior[sample_idx] = 1.0 - np.prod(1.0 - probs, axis=1)
+        elif args.label_corr_drug_combine == 'topk_noisy_or':
+            k = min(drug_topk, values.shape[1])
+            probs = np.clip(np.sort(values, axis=1)[:, -k:], 0.0, 1.0)
+            drug_prior[sample_idx] = 1.0 - np.prod(1.0 - probs, axis=1)
+        elif args.label_corr_drug_combine == 'max':
+            drug_prior[sample_idx] = values.max(axis=1)
+        else:
+            raise ValueError(f"Unknown label_corr_drug_combine: {args.label_corr_drug_combine}")
+
+    drug_prior = np.clip(np.nan_to_num(drug_prior, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+    if args.label_corr_score_transform == 'rank':
+        drug_prior = rank_percentile(drug_prior)
+
+    label_weight = 1.0 - drug_mix_weight
+    priors = label_weight * label_prior + drug_mix_weight * drug_prior
+    return priors.astype(np.float32)
 
 
 def build_global_positive_samples(DAL):
@@ -674,37 +846,82 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     data_test = np.array(data_test)
     train_weights = data_train[:, 3] if data_train.shape[1] > 3 else np.ones(len(data_train), dtype=np.float32)
 
+    if args.use_label_corr_prior and (args.use_graph_prior or args.use_prior_soft_labels):
+        raise ValueError("--use_label_corr_prior is mutually exclusive with --use_graph_prior and --use_prior_soft_labels in this implementation")
+
     train_graph_prior = None
     test_graph_prior = None
-    if args.use_graph_prior:
-        graph_prior_source = data_train[:, :3]
-        if args.graph_prior_scope == 'global':
+    needs_train_graph_prior = args.use_graph_prior or args.use_prior_soft_labels or args.use_label_corr_prior
+    needs_test_graph_prior = args.use_graph_prior or args.use_label_corr_prior
+    if needs_train_graph_prior:
+        if args.use_label_corr_prior:
             if DAL is None:
-                raise ValueError("DAL is required when graph_prior_scope='global'")
-            graph_prior_source = build_global_positive_samples(DAL)
+                raise ValueError("DAL is required when --use_label_corr_prior is enabled")
+            train_graph_prior = compute_label_corr_prior_scores(
+                samples=data_train[:, :3],
+                fold_train=data_train[:, :3],
+                DAL=DAL,
+                args=args,
+                drug_features=drug_feature,
+                side_features=side_feature
+            )
+            test_graph_prior = compute_label_corr_prior_scores(
+                samples=data_test[:, :3],
+                fold_train=data_train[:, :3],
+                DAL=DAL,
+                args=args,
+                drug_features=drug_feature,
+                side_features=side_feature
+            )
+            args.graph_prior_train_mean = float(train_graph_prior.mean())
+            args.graph_prior_test_mean = float(test_graph_prior.mean())
+            print(
+                "[LabelCorrPrior] fold-local ADR label-correlation prior enabled: "
+                f"source={args.label_corr_source}, combine={args.label_corr_prior_combine}, "
+                f"topk={args.label_corr_topk}, "
+                f"drug_mix={args.label_corr_drug_mix_weight:.4f}, "
+                f"hybrid_weights={args.label_corr_cooccur_weight:.3f}/"
+                f"{args.label_corr_mesh_weight:.3f}/{args.label_corr_gda_weight:.3f}, "
+                f"matrix_transform={args.label_corr_matrix_transform}, "
+                f"transform={args.label_corr_score_transform}, weight={args.label_corr_prior_weight:.4f}, "
+                f"train/test mean={args.graph_prior_train_mean:.4f}/{args.graph_prior_test_mean:.4f}"
+            )
+        else:
+            graph_prior_source = data_train[:, :3]
+            if args.graph_prior_scope == 'global':
+                if DAL is None:
+                    raise ValueError("DAL is required when graph_prior_scope='global'")
+                graph_prior_source = build_global_positive_samples(DAL)
 
-        train_graph_prior = compute_fold_graph_prior_scores(
-            samples=data_train[:, :3],
-            fold_train=graph_prior_source,
-            drug_features=drug_feature,
-            side_features=side_feature,
-            args=args
-        )
-        test_graph_prior = compute_fold_graph_prior_scores(
-            samples=data_test[:, :3],
-            fold_train=graph_prior_source,
-            drug_features=drug_feature,
-            side_features=side_feature,
-            args=args
-        )
-        args.graph_prior_train_mean = float(train_graph_prior.mean())
-        args.graph_prior_test_mean = float(test_graph_prior.mean())
-        print("[GraphPrior] graph prior enabled")
-        print(
-            f"[GraphPrior] scope={args.graph_prior_scope}, combine={args.graph_prior_combine}, "
-            f"weight={args.graph_prior_weight:.4f}, "
-            f"train/test mean={args.graph_prior_train_mean:.4f}/{args.graph_prior_test_mean:.4f}"
-        )
+            train_graph_prior = compute_fold_graph_prior_scores(
+                samples=data_train[:, :3],
+                fold_train=graph_prior_source,
+                drug_features=drug_feature,
+                side_features=side_feature,
+                args=args
+            )
+            if needs_test_graph_prior:
+                test_graph_prior = compute_fold_graph_prior_scores(
+                    samples=data_test[:, :3],
+                    fold_train=graph_prior_source,
+                    drug_features=drug_feature,
+                    side_features=side_feature,
+                    args=args
+                )
+            args.graph_prior_train_mean = float(train_graph_prior.mean())
+            args.graph_prior_test_mean = float(test_graph_prior.mean()) if test_graph_prior is not None else -1.0
+            print("[GraphPrior] graph prior available")
+            print(
+                f"[GraphPrior] scope={args.graph_prior_scope}, combine={args.graph_prior_combine}, "
+                f"weight={args.graph_prior_weight:.4f}, "
+                f"train/test mean={args.graph_prior_train_mean:.4f}/{args.graph_prior_test_mean:.4f}"
+            )
+            if args.use_prior_soft_labels:
+                print(
+                    "[PriorSoftLabel] enabled: "
+                    f"alpha={args.prior_soft_label_alpha:.4f}, "
+                    f"min_prior={args.prior_soft_label_min_prior:.4f}"
+                )
     
     train_indices = (
         data_train[:, 0].astype(int),  # drug_indices
@@ -720,19 +937,13 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
     )
     
     '''构建训练集和测试集'''
-    if args.use_graph_prior:
+    if needs_train_graph_prior:
         trainset = torch.utils.data.TensorDataset(
             torch.LongTensor(train_indices[0]),  # drug_indices
             torch.LongTensor(train_indices[1]),  # side_indices
             torch.FloatTensor(train_indices[2]), # labels
             torch.FloatTensor(train_indices[3]), # sample weights
             torch.FloatTensor(train_graph_prior) # fold-local graph prior
-        )
-        testset = torch.utils.data.TensorDataset(
-            torch.LongTensor(test_indices[0]),
-            torch.LongTensor(test_indices[1]),
-            torch.FloatTensor(test_indices[2]),
-            torch.FloatTensor(test_graph_prior)
         )
     else:
         trainset = torch.utils.data.TensorDataset(
@@ -741,13 +952,22 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
             torch.FloatTensor(train_indices[2]), # labels
             torch.FloatTensor(train_indices[3])  # sample weights
         )
+
+    if needs_test_graph_prior:
+        testset = torch.utils.data.TensorDataset(
+            torch.LongTensor(test_indices[0]),
+            torch.LongTensor(test_indices[1]),
+            torch.FloatTensor(test_indices[2]),
+            torch.FloatTensor(test_graph_prior)
+        )
+    else:
         testset = torch.utils.data.TensorDataset(
             torch.LongTensor(test_indices[0]),
             torch.LongTensor(test_indices[1]),
             torch.FloatTensor(test_indices[2])
         )
     
-    _test = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=True,
+    _test = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=False,
                                         num_workers=0, pin_memory=args.pin_memory)
 
     _train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True,
@@ -771,8 +991,32 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
         d4_method += "+warmup"
     if args.use_d4_contrastive_scale_norm:
         d4_method += "+scale_norm"
+    if args.use_structured_contrastive_views:
+        d4_method += "+structured_views"
+    if args.use_structured_view_dropout:
+        d4_method += "+view_dropout"
+    if args.use_hybrid_structured_noise_views:
+        d4_method += "+hybrid_noise"
+    if args.use_structured_view_curriculum:
+        d4_method += f"+view_curriculum@{int(args.structured_view_curriculum_start_epoch)}"
     if args.use_d4_similarity_negative_weighting:
         d4_method += "+similarity_negative_weighting"
+    if args.use_label_corr_prior:
+        d4_method += (
+            f"+label_corr_prior({args.label_corr_source},{args.label_corr_prior_combine},"
+            f"k={int(args.label_corr_topk)},mix={float(args.label_corr_drug_mix_weight):.2f},"
+            f"w={float(args.label_corr_prior_weight):.2f})"
+        )
+    if args.classification_loss == 'asl':
+        d4_method += (
+            f"+asl(gp={float(args.asl_gamma_pos):.2f},"
+            f"gn={float(args.asl_gamma_neg):.2f},clip={float(args.asl_clip):.2f})"
+        )
+    if args.use_pairwise_ranking_loss:
+        d4_method += (
+            f"+pairwise_rank(w={float(args.pairwise_rank_weight):.2f},"
+            f"m={float(args.pairwise_rank_margin):.2f})"
+        )
     print(f"D4 contrastive method: {d4_method}")
     model = DGAPred(
         drugs_dim=drug_feature[0].shape[0]*n_drug_chunks,
@@ -785,6 +1029,14 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
         n_side_chunks=n_side_chunks,
         use_feature_interaction=args.use_feature_interaction,
         use_contrastive_learning=args.use_contrastive_learning,
+        use_structured_contrastive_views=args.use_structured_contrastive_views,
+        use_structured_view_dropout=args.use_structured_view_dropout,
+        use_hybrid_structured_noise_views=args.use_hybrid_structured_noise_views,
+        use_structured_view_curriculum=args.use_structured_view_curriculum,
+        structured_view_curriculum_start_epoch=args.structured_view_curriculum_start_epoch,
+        structured_view_dropout_prob=args.structured_view_dropout_prob,
+        structured_view_dropout_views=args.structured_view_dropout_views,
+        structured_view_dropout_min_keep=args.structured_view_dropout_min_keep,
         contrastive_loss_type=args.contrastive_loss_type,
         d4_tau_plus=args.d4_tau_plus
     ).to(device)
@@ -917,7 +1169,12 @@ def train_test(drug_feature, side_feature, data_train, data_test, fold, args, re
         pickle.dump(model.state_dict(), f)
     print("Model saved to: %s" % os.path.join(output_dir, f'model_fold{str(fold)}.pkl'))
     with open(os.path.join(output_dir,f'testdata_fold{str(fold)}.pkl'),'wb') as f:
-        test_data={"ground_truth":ground_truth,"pred_value":pred1}
+        test_data={
+            "ground_truth": ground_truth,
+            "pred_value": pred1,
+            "drug_id": np.array(sum(ground_i, []), dtype=np.int64),
+            "side_id": np.array(sum(ground_u, []), dtype=np.int64),
+        }
         pickle.dump(test_data, f)
     print("Test data saved to: %s" % os.path.join(output_dir, f'testdata_fold{str(fold)}.pkl'))
 
@@ -983,8 +1240,9 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
             logits, reconstruction = model_output
             contrastive_loss = None
 
-        if args.use_graph_prior and graph_priors is not None:
-            logits = logits + float(args.graph_prior_weight) * (graph_priors.to(device) - 0.5)
+        if (args.use_graph_prior or args.use_label_corr_prior) and graph_priors is not None:
+            prior_weight = float(args.label_corr_prior_weight) if args.use_label_corr_prior else float(args.graph_prior_weight)
+            logits = logits + prior_weight * (graph_priors.to(device) - 0.5)
         
         one_label_index = np.nonzero(labels.data.numpy())
         
@@ -994,9 +1252,22 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
             y_target = (1.0 - eps) * labels + 0.5 * eps
         else:
             y_target = labels
+        if args.use_prior_soft_labels and graph_priors is not None:
+            prior = graph_priors.to(device).clamp(0.0, 1.0)
+            prior_mask = (labels.to(device) <= 0) & (prior >= float(args.prior_soft_label_min_prior))
+            soft_target = torch.clamp(
+                float(args.prior_soft_label_alpha) * prior,
+                min=0.0,
+                max=float(args.prior_soft_label_max_target)
+            )
+            y_target = y_target.to(device)
+            y_target = torch.where(prior_mask, soft_target, y_target)
         
         # 计算损失
-        cls_loss = lossfunction1(logits, y_target.to(device))
+        if args.classification_loss == 'asl':
+            cls_loss = asymmetric_loss_with_logits(logits, y_target.to(device), args)
+        else:
+            cls_loss = lossfunction1(logits, y_target.to(device))
         loss1 = (cls_loss * sample_weights.to(device)).mean()
         if len(one_label_index[0]) > 0:
             loss2 = lossfunction2(reconstruction[one_label_index], ratings[one_label_index].to(device))
@@ -1004,6 +1275,10 @@ def train(model, train_loader, optimizer, lossfunction1, lossfunction2, device,
             loss2 = logits.new_tensor(0.0)
         lambda_cls = 0.7  # 分类任务权重
         total_loss = lambda_cls * loss1 + (1 - lambda_cls) * loss2
+
+        if args.use_pairwise_ranking_loss:
+            rank_loss = pairwise_ranking_loss(logits, labels.to(device), args)
+            total_loss = total_loss + float(args.pairwise_rank_weight) * rank_loss
         
         # D4：对比损失可选去偏、权重热身和尺度归一化，不改变评估逻辑。
         if contrastive_loss is not None:
@@ -1053,9 +1328,10 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
     with torch.no_grad():
       for step, batch in pbar:
         graph_priors = None
-        if len(batch) == 5 and args is not None and args.use_graph_prior:
+        uses_pair_prior = args is not None and (args.use_graph_prior or args.use_label_corr_prior)
+        if len(batch) == 5 and uses_pair_prior:
             drug_idx, side_idx, ratings, _, graph_priors = batch
-        elif len(batch) == 4 and args is not None and args.use_graph_prior:
+        elif len(batch) == 4 and uses_pair_prior:
             drug_idx, side_idx, ratings, graph_priors = batch
         elif len(batch) == 4:
             drug_idx, side_idx, ratings, _ = batch
@@ -1080,8 +1356,9 @@ def test(model, test_loader, device, global_drug_features, global_side_features,
             scores_one, scores_two, _ = model_output
         else:
             scores_one, scores_two = model_output
-        if args is not None and args.use_graph_prior and graph_priors is not None:
-            scores_one = scores_one + float(args.graph_prior_weight) * (graph_priors.to(device) - 0.5)
+        if args is not None and (args.use_graph_prior or args.use_label_corr_prior) and graph_priors is not None:
+            prior_weight = float(args.label_corr_prior_weight) if args.use_label_corr_prior else float(args.graph_prior_weight)
+            scores_one = scores_one + prior_weight * (graph_priors.to(device) - 0.5)
         one_label_index = np.nonzero(labels.data.numpy())
         
         # 计算损失
@@ -1167,6 +1444,23 @@ if __name__ == '__main__':
     parser.add_argument('--dropout2', type=float, default=0.2,metavar='FLOAT', help='Final prediction dropout rate')
     parser.add_argument('--label_smooth', type=float, default=0.05,metavar='FLOAT', help='二分类标签平滑系数(0~0.2)，仅训练使用')
     parser.add_argument('--grad_clip', type=float, default=0.5,metavar='FLOAT', help='梯度裁剪阈值，<=0 关闭')
+    parser.add_argument('--classification_loss', type=str, default='bce',
+                        choices=['bce', 'asl'],
+                        help='训练分类损失：bce 或 asymmetric loss')
+    parser.add_argument('--asl_gamma_pos', type=float, default=0.0,
+                        metavar='FLOAT', help='ASL正样本聚焦系数')
+    parser.add_argument('--asl_gamma_neg', type=float, default=4.0,
+                        metavar='FLOAT', help='ASL负样本聚焦系数')
+    parser.add_argument('--asl_clip', type=float, default=0.05,
+                        metavar='FLOAT', help='ASL负类概率裁剪强度')
+    parser.add_argument('--use_pairwise_ranking_loss', action='store_true',
+                        help='启用batch内正负样本pairwise ranking辅助损失，直接对齐AUC/AUPR排序目标')
+    parser.add_argument('--pairwise_rank_weight', type=float, default=0.05,
+                        metavar='FLOAT', help='pairwise ranking辅助损失权重')
+    parser.add_argument('--pairwise_rank_margin', type=float, default=0.0,
+                        metavar='FLOAT', help='pairwise ranking softplus margin')
+    parser.add_argument('--pairwise_rank_max_pairs', type=int, default=16384,
+                        metavar='N', help='每个batch最多采样的正负配对数，<=0表示使用全配对')
     parser.add_argument('--use_scheduler', action=argparse.BooleanOptionalAction, default=True,
                         help='启用基于验证AUC的ReduceLROnPlateau学习率调度')
     # FIA-DTA 2025: 特征交互注意力机制，增强药物与靶标的多模态特征交互
@@ -1175,6 +1469,22 @@ if __name__ == '__main__':
                         help='启用特征交互注意力 (FIA-DTA 2025)')
     parser.add_argument('--use_contrastive_learning', action=argparse.BooleanOptionalAction, default=True,
                         help='启用协同对比学习 (CCL-ASPS 2024)')
+    parser.add_argument('--use_structured_contrastive_views', action='store_true',
+                        help='启用结构化遮挡对比视图，显式对齐 drug / interaction / side 子结构')
+    parser.add_argument('--use_structured_view_dropout', action='store_true',
+                        help='在结构化对比视图上追加随机子结构遮挡视图，增强多视图一致性约束')
+    parser.add_argument('--use_hybrid_structured_noise_views', action='store_true',
+                        help='在结构化对比视图之外保留一个轻微噪声全视图，兼顾语义遮挡与细粒度扰动不变性')
+    parser.add_argument('--use_structured_view_curriculum', action='store_true',
+                        help='训练前期先用噪声全视图，后期再切到结构化视图，降低结构化对比学习的早期优化难度')
+    parser.add_argument('--structured_view_curriculum_start_epoch', type=int, default=6,
+                        metavar='N', help='从该epoch开始启用结构化对比视图curriculum')
+    parser.add_argument('--structured_view_dropout_prob', type=float, default=0.5,
+                        metavar='FLOAT', help='随机结构化视图中每个子结构的drop概率')
+    parser.add_argument('--structured_view_dropout_views', type=int, default=2,
+                        metavar='N', help='每个batch额外采样的随机结构化视图数量')
+    parser.add_argument('--structured_view_dropout_min_keep', type=int, default=1,
+                        metavar='N', help='每个随机结构化视图至少保留的子结构数量')
     parser.add_argument('--contrastive_weight', type=float, default=0.20, metavar='FLOAT', help='对比学习损失权重')
     parser.add_argument('--contrastive_loss_type', type=str, default='standard',
                         choices=['standard', 'debiased'], help='D4对比损失类型')
@@ -1235,6 +1545,47 @@ if __name__ == '__main__':
     parser.add_argument('--graph_prior_scope', type=str, default='fold',
                         choices=['fold', 'global'],
                         help='图先验正样本来源：fold=仅训练折，global=完整标签矩阵transductive先验')
+    parser.add_argument('--use_label_corr_prior', action='store_true',
+                        help='启用fold-local ADR标签共现先验，用同一药物已知ADR profile修正候选ADR分数')
+    parser.add_argument('--label_corr_source', type=str, default='jaccard',
+                        choices=['jaccard', 'conditional', 'conditional_hybrid'],
+                        help='ADR标签相关性来源：jaccard为对称共现，conditional为P(candidate|known)，conditional_hybrid混入少量MESH/GDA语义相似度')
+    parser.add_argument('--label_corr_prior_weight', type=float, default=0.5,
+                        metavar='FLOAT', help='ADR标签相关性先验logit残差权重')
+    parser.add_argument('--label_corr_prior_combine', type=str, default='topk_mean',
+                        choices=['max', 'mean', 'topk_mean', 'noisy_or', 'topk_noisy_or'],
+                        help='同一药物已知ADR对候选ADR的共现支持聚合方式')
+    parser.add_argument('--label_corr_topk', type=int, default=3,
+                        metavar='N', help='topk_mean聚合时使用的最高相关ADR数量')
+    parser.add_argument('--label_corr_drug_mix_weight', type=float, default=0.0,
+                        metavar='FLOAT', help='在ADR标签相关性先验中混入drug-neighbor residual的比例')
+    parser.add_argument('--label_corr_drug_combine', type=str, default='max',
+                        choices=['max', 'mean', 'topk_mean', 'noisy_or', 'topk_noisy_or'],
+                        help='drug-neighbor residual对同ADR正样本药物的聚合方式')
+    parser.add_argument('--label_corr_drug_topk', type=int, default=3,
+                        metavar='N', help='drug-neighbor topk_mean聚合使用的相似药物数量')
+    parser.add_argument('--label_corr_score_transform', type=str, default='rank',
+                        choices=['none', 'rank'],
+                        help='标签相关性先验分数变换；rank对应当前离线screen最强设置')
+    parser.add_argument('--label_corr_matrix_transform', type=str, default='none',
+                        choices=['none', 'minmax'],
+                        help='ADR标签相关性矩阵变换；minmax对齐离线residual evaluator的默认相关矩阵归一化')
+    parser.add_argument('--label_corr_cooccur_weight', type=float, default=0.90,
+                        metavar='FLOAT', help='conditional_hybrid中conditional共现矩阵权重')
+    parser.add_argument('--label_corr_mesh_weight', type=float, default=0.05,
+                        metavar='FLOAT', help='conditional_hybrid中MESH ADR相似度权重')
+    parser.add_argument('--label_corr_gda_weight', type=float, default=0.05,
+                        metavar='FLOAT', help='conditional_hybrid中GDA ADR相似度权重')
+    parser.add_argument('--label_corr_smooth', type=float, default=1e-3,
+                        metavar='FLOAT', help='Jaccard共现平滑项')
+    parser.add_argument('--use_prior_soft_labels', action='store_true',
+                        help='只在训练折用fold-local图先验软化高风险未观测负样本标签，测试阶段不加先验logit')
+    parser.add_argument('--prior_soft_label_alpha', type=float, default=0.3,
+                        metavar='FLOAT', help='未观测负样本软标签=alpha*prior')
+    parser.add_argument('--prior_soft_label_min_prior', type=float, default=0.6,
+                        metavar='FLOAT', help='只有图先验高于该值的未观测负样本才软化')
+    parser.add_argument('--prior_soft_label_max_target', type=float, default=0.4,
+                        metavar='FLOAT', help='未观测负样本软标签上限，避免把伪负样本直接当正样本')
 
     args = parser.parse_args()
     configure_cpu_threads(args.torch_threads, args.torch_interop_threads)
